@@ -6,7 +6,7 @@ A production-grade, end-to-end economic analytics platform built with Streamlit,
 
 ## Live Demo
 
-🚀 **[Launch Dashboard](https://sumedhpatil1507-global-inflation-dashboard.streamlit.app)**
+🚀 **[Launch Dashboard](https://global-inflation-dashboard-cmuugxnnh2kqffda2e78app.streamlit.app)**
 
 > Hosted free on [Streamlit Community Cloud](https://share.streamlit.io)
 
