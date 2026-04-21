@@ -17,14 +17,21 @@ def zscore_anomalies(df: pd.DataFrame, threshold: float = 3.0):
 
 def zscore_plot(df: pd.DataFrame, anomalies: pd.DataFrame, threshold: float = 3.0) -> go.Figure:
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df["year"], y=df["inflation_rate"],
-                             mode="markers", marker=dict(color="lightgray", size=4),
-                             name="Normal"))
-    fig.add_trace(go.Scatter(x=anomalies["year"], y=anomalies["inflation_rate"],
-                             mode="markers", marker=dict(color="red", size=8, symbol="x"),
-                             name=f"Anomaly (|Z|>{threshold:.1f})"))
-    fig.update_layout(title="Z-Score Anomaly Detection — Inflation Rate",
-                      xaxis_title="Year", yaxis_title="Inflation Rate (%)", height=420)
+    fig.add_trace(go.Scatter(
+        x=df["year"], y=df["inflation_rate"],
+        mode="markers", marker=dict(color="lightgray", size=4),
+        name="Normal",
+    ))
+    if not anomalies.empty:
+        fig.add_trace(go.Scatter(
+            x=anomalies["year"], y=anomalies["inflation_rate"],
+            mode="markers", marker=dict(color="red", size=8, symbol="x"),
+            name=f"Anomaly (|Z|>{threshold:.1f})",
+        ))
+    fig.update_layout(
+        title="Z-Score Anomaly Detection — Inflation Rate",
+        xaxis_title="Year", yaxis_title="Inflation Rate (%)", height=420,
+    )
     return fig
 
 
@@ -46,33 +53,38 @@ def autoencoder_anomalies(df: pd.DataFrame, epochs: int = 30, percentile: float 
     X_t = torch.tensor(X_norm, dtype=torch.float32)
 
     model = _Autoencoder(len(feat_cols))
-    opt = optim.Adam(model.parameters(), lr=0.01)
-    loss_fn = nn.MSELoss(reduction="none")
+    opt   = optim.Adam(model.parameters(), lr=0.01)
 
     for _ in range(epochs):
         opt.zero_grad()
         recon = model(X_t)
-        loss = loss_fn(recon, X_t).mean()
+        loss  = nn.functional.mse_loss(recon, X_t)
         loss.backward()
         opt.step()
 
     with torch.no_grad():
         recon = model(X_t).numpy()
-    error = np.mean((X_norm - recon) ** 2, axis=1)
-    threshold = np.percentile(error, percentile)
-    anomaly_mask = error > threshold
-    return df.copy().assign(recon_error=error, is_anomaly=anomaly_mask), threshold
+
+    error         = np.mean((X_norm - recon) ** 2, axis=1)
+    threshold_val = float(np.percentile(error, percentile))
+    anomaly_mask  = error > threshold_val
+    # Convert to plain Python list so Plotly accepts it as discrete colors
+    colors = ["red" if a else "steelblue" for a in anomaly_mask]
+    return df.copy().assign(recon_error=error, is_anomaly=anomaly_mask, _color=colors), threshold_val
 
 
 def autoencoder_plot(df_ae: pd.DataFrame, threshold: float) -> go.Figure:
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_ae["year"], y=df_ae["recon_error"],
-                             mode="markers", marker=dict(
-                                 color=np.where(df_ae["is_anomaly"], "red", "steelblue"),
-                                 size=5, opacity=0.7),
-                             name="Reconstruction Error"))
+    fig.add_trace(go.Scatter(
+        x=df_ae["year"], y=df_ae["recon_error"],
+        mode="markers",
+        marker=dict(color=df_ae["_color"].tolist(), size=5, opacity=0.7),
+        name="Reconstruction Error",
+    ))
     fig.add_hline(y=threshold, line_dash="dash", line_color="red",
                   annotation_text="Anomaly Threshold")
-    fig.update_layout(title="Autoencoder Anomaly Detection (Reconstruction Error)",
-                      xaxis_title="Year", yaxis_title="Reconstruction Error", height=420)
+    fig.update_layout(
+        title="Autoencoder Anomaly Detection (Reconstruction Error)",
+        xaxis_title="Year", yaxis_title="Reconstruction Error", height=420,
+    )
     return fig
