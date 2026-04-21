@@ -6,7 +6,9 @@ A production-grade, end-to-end economic analytics platform built with Streamlit,
 
 ## Live Demo
 
-> Deploy free on [Streamlit Community Cloud](https://share.streamlit.io) — connect this repo, set `app.py` as entry point, done.
+🚀 **[Launch Dashboard](https://sumedhpatil1507-global-inflation-dashboard.streamlit.app)**
+
+> Hosted free on [Streamlit Community Cloud](https://share.streamlit.io)
 
 ---
 
