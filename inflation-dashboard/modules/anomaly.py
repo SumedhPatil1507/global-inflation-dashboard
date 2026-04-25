@@ -2,10 +2,15 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import torch
-import torch.nn as nn
-import torch.optim as optim
 from scipy import stats
+
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    TORCH_OK = True
+except ImportError:
+    TORCH_OK = False
 
 
 def zscore_anomalies(df: pd.DataFrame, threshold: float = 3.0):
@@ -46,6 +51,13 @@ class _Autoencoder(nn.Module):
 
 
 def autoencoder_anomalies(df: pd.DataFrame, epochs: int = 30, percentile: float = 95):
+    if not TORCH_OK:
+        # Fallback: use Z-score as proxy
+        df2, _ = zscore_anomalies(df, threshold=2.0)
+        df2["recon_error"] = np.abs(df2["z_score"])
+        df2["is_anomaly"]  = df2["recon_error"] > df2["recon_error"].quantile(percentile / 100)
+        df2["_color"]      = ["red" if a else "steelblue" for a in df2["is_anomaly"]]
+        return df2, float(df2["recon_error"].quantile(percentile / 100))
     feat_cols = [c for c in ["interest_rate", "oil_price", "gdp_growth",
                               "unemployment_rate", "food_price_index"] if c in df.columns]
     sub = df[feat_cols].fillna(0).values.astype(float)

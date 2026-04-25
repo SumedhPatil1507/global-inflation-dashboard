@@ -121,7 +121,6 @@ def export_pdf(df: pd.DataFrame, country: str, figures: list[go.Figure]) -> byte
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
         from reportlab.lib import colors
-        import kaleido  # noqa — needed for fig.to_image
 
         buf    = io.BytesIO()
         doc    = SimpleDocTemplate(buf, pagesize=A4,
@@ -154,7 +153,7 @@ def export_pdf(df: pd.DataFrame, country: str, figures: list[go.Figure]) -> byte
             story.append(t)
             story.append(Spacer(1, 12))
 
-        # Charts
+        # Charts — kaleido optional, skip if not available
         for fig in figures[:3]:
             try:
                 img_bytes = fig.to_image(format="png", width=700, height=350, scale=1.5)
@@ -162,7 +161,9 @@ def export_pdf(df: pd.DataFrame, country: str, figures: list[go.Figure]) -> byte
                 story.append(Image(img_buf, width=480, height=240))
                 story.append(Spacer(1, 8))
             except Exception:
-                pass
+                story.append(Paragraph("[Chart unavailable — install kaleido for chart export]",
+                                       styles["Normal"]))
+                story.append(Spacer(1, 8))
 
         # Insights
         story.append(Paragraph("Key Insights", styles["Heading2"]))

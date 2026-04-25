@@ -1,17 +1,16 @@
-# All packages pinned to versions with pre-built wheels for Python 3.11
-# Nothing here requires compilation from source
+# Pre-built wheels only — no source compilation needed
+# Compatible with Python 3.11 AND 3.12 AND 3.13
 
-streamlit==1.32.0
-pandas==2.1.4
-numpy==1.26.4
-plotly==5.18.0
-matplotlib==3.8.3
-seaborn==0.13.2
-scipy==1.12.0
-scikit-learn==1.4.1
-requests==2.31.0
-wbgapi==1.0.12
-supabase==2.3.4
-reportlab==4.1.0
-kaleido==0.2.1
-python-dotenv==1.0.1
+streamlit>=1.32.0,<2.0.0
+pandas>=2.1.0,<2.3.0
+numpy>=1.26.0,<2.0.0
+plotly>=5.18.0,<6.0.0
+matplotlib>=3.8.0,<4.0.0
+seaborn>=0.13.0,<1.0.0
+scipy>=1.12.0,<2.0.0
+scikit-learn>=1.4.0,<2.0.0
+requests>=2.31.0,<3.0.0
+wbgapi>=1.0.12
+supabase>=2.3.0,<3.0.0
+reportlab>=4.1.0,<5.0.0
+python-dotenv>=1.0.0,<2.0.0

@@ -7,9 +7,15 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-import torch
-import torch.nn as nn
-import torch.optim as optim
+
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    TORCH_OK = True
+except ImportError:
+    TORCH_OK = False
+
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
@@ -38,6 +44,9 @@ class _SimpleNN(nn.Module):
 
 
 def train_and_evaluate(df: pd.DataFrame, epochs: int = 40):
+    if not TORCH_OK:
+        return None, None, None, None, None, None, None, []
+
     avail = [f for f in FEATURES if f in df.columns]
     sub   = df[avail + ["inflation_rate"]].dropna()
 
@@ -93,6 +102,9 @@ def train_and_evaluate(df: pd.DataFrame, epochs: int = 40):
 
 def load_saved_model() -> dict | None:
     """Load previously trained model. Returns None if not found."""
+    if not TORCH_OK:
+        return None
+
     try:
         if os.path.exists(MODEL_PATH):
             return torch.load(MODEL_PATH, weights_only=False)

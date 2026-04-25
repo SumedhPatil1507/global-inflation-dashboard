@@ -2,9 +2,14 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import torch
-import torch.nn as nn
-import torch.optim as optim
+
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    TORCH_OK = True
+except ImportError:
+    TORCH_OK = False
 
 
 class _LSTMModel(nn.Module):
@@ -28,6 +33,17 @@ def _make_sequences(series: np.ndarray, seq_len: int = 3):
 
 def forecast_country(df: pd.DataFrame, country: str,
                      forecast_years: int = 5, epochs: int = 60, seq_len: int = 3):
+    if not TORCH_OK:
+        # Simple linear extrapolation fallback
+        sub    = df[df["country"] == country].sort_values("year")
+        series = sub["inflation_rate"].dropna().values.astype(np.float32)
+        if len(series) < 2:
+            return None, None, None, None
+        trend      = np.polyfit(range(len(series)), series, 1)
+        last_year  = int(sub["year"].max())
+        future_yrs = list(range(last_year + 1, last_year + forecast_years + 1))
+        future     = np.array([np.polyval(trend, len(series) + i) for i in range(forecast_years)])
+        return series, sub["year"].values.tolist(), future, future_yrs
     sub    = df[df["country"] == country].sort_values("year")
     series = sub["inflation_rate"].dropna().values.astype(np.float32)
 

@@ -111,7 +111,6 @@ with st.sidebar:
     st.caption("Global Inflation Insights · World Bank · FRED · PyTorch")
 
 # ── Load data ─────────────────────────────────────────────────────────────────
-# ── Load data — synthetic first, live on demand ───────────────────────────────
 with st.spinner("Loading data…"):
     df_raw = get_data(source=source_key, start_year=year_range[0], end_year=year_range[1])
 
@@ -135,8 +134,8 @@ col_title, col_badge = st.columns([5, 1])
 with col_title:
     st.markdown("# 🌍 Global Inflation Insights")
 with col_badge:
-    src = df_raw.get("data_source", pd.Series(["?"])).iloc[0] if "data_source" in df_raw.columns else "Live"
-    updated = df_raw.get("last_updated", pd.Series(["—"])).iloc[0] if "last_updated" in df_raw.columns else "—"
+    src     = df_raw["data_source"].iloc[0] if "data_source" in df_raw.columns else "Live"
+    updated = df_raw["last_updated"].iloc[0] if "last_updated" in df_raw.columns else "—"
     st.markdown(f'<br><span class="data-badge">📡 {src}</span>', unsafe_allow_html=True)
     st.caption(f"Updated: {updated}")
 
