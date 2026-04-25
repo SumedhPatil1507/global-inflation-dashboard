@@ -1,41 +1,44 @@
 # 🌍 Global Inflation Insights Dashboard
 
-A production-grade, end-to-end economic analytics platform built with Streamlit, PyTorch, and the World Bank API. Analyzes post-COVID inflation dynamics across 20+ major economies with live data, machine learning models, anomaly detection, LSTM forecasting, and enterprise features like authentication, audit logs, cost tracking, and webhook notifications.
-
----
+Production-grade economic analytics platform — live World Bank + FRED data, PyTorch ML, Supabase persistence, role-based auth, PDF export, and enterprise reporting.
 
 ## Live Demo
 
 🚀 **[Launch Dashboard](https://global-inflation-dashboard-cmuugxnnh2kqffda2e78app.streamlit.app)**
 
-> Hosted free on [Streamlit Community Cloud](https://share.streamlit.io)
+> Hosted on [Streamlit Community Cloud](https://share.streamlit.io)
 
 ---
 
-## Features
+## What's Inside
 
 ### Analytics
 | Module | Description |
 |---|---|
-| EDA | Histograms, time-series trends, boxplots, violin plots, correlation heatmap, scatter matrix |
-| ML Models | PyTorch feedforward neural network with loss curve + permutation feature importance + confidence score |
-| Anomaly Detection | Z-score statistical detection + Autoencoder deep learning detection |
-| Clustering | Hierarchical dendrogram + K-Means elbow method + labeled scatter |
-| LSTM Forecasting | Per-country inflation forecast with configurable horizon + confidence band |
+| EDA | Histograms, trends, boxplots, violin, heatmap, scatter matrix |
+| Insights | Auto-generated business callouts — Z-score flags, real rate gaps, deflationary signals |
+| ML Models | PyTorch NN with 80/20 train/test split, loss curve, permutation feature importance |
+| Anomaly Detection | Z-score + Autoencoder deep learning |
+| Clustering | Hierarchical dendrogram + K-Means elbow + scatter |
+| LSTM Forecasting | Per-country forecast with confidence band + PDF export |
 | Advanced Plots | 3D scatter, contour density, hexbin, facet grid |
 
 ### Enterprise
 | Feature | Description |
 |---|---|
-| Authentication | SHA-256 hashed login, session management, logout |
-| Data Editor | Live editable table with CSV + JSON export |
-| Usage Logs | Every user action logged to SQLite with timestamp |
-| Cost Tracking | Row-based cost model with daily cost chart |
-| Feedback Loop | In-app rating + comment form, stored and reviewable |
-| Webhooks | POST notifications to Slack, Discord, Make.com, or any HTTP endpoint |
-| Admin Panel | Full audit dashboard — logs, feedback, cost — admin-only access |
-| Citations | Inline data source attribution on every chart |
-| Confidence Scores | Model and forecast confidence badges (green/amber/red) |
+| Auth | SHA-256 login, rate limiting (5 attempts → 5min lockout), role-based access |
+| Roles | `admin` · `analyst` · `viewer` — each sees different tabs |
+| Alert Thresholds | User-configurable inflation/unemployment alerts → webhook fires on breach |
+| Supabase DB | Persistent logs + feedback (SQLite fallback for local dev) |
+| Usage Logs | Every action logged with timestamp, user, cost estimate |
+| Cost Tracking | Daily cost chart in admin panel |
+| Feedback Loop | In-app rating form, stored and reviewable by admin |
+| Webhooks | POST to Slack, Discord, Make.com, Zapier on 5 event types |
+| PDF Export | One-click country report with data table + charts + insights |
+| Data Editor | Live editable table with CSV + JSON download |
+| FRED API | Real monthly US data (CPI, Fed Funds Rate, Unemployment) |
+| Docker | Single-command self-hosted deployment |
+| CI/CD | GitHub Actions — lint + smoke test on every push |
 
 ---
 
@@ -43,21 +46,25 @@ A production-grade, end-to-end economic analytics platform built with Streamlit,
 
 ```
 inflation-dashboard/
-├── app.py                        # Main Streamlit app — all tabs wired here
+├── app.py                     # Main app — all tabs, auth, KPIs
 ├── modules/
-│   ├── data_loader.py            # World Bank API fetch + synthetic fallback
-│   ├── eda.py                    # Interactive EDA (Plotly)
-│   ├── models.py                 # Neural network training + feature importance
-│   ├── anomaly.py                # Z-score + Autoencoder anomaly detection
-│   ├── clustering.py             # Hierarchical + K-Means clustering
-│   ├── forecasting.py            # LSTM per-country forecasting
-│   ├── advanced_plots.py         # 3D, contour, hexbin, facet
-│   ├── security.py               # Auth, session, login wall
-│   ├── usage_logger.py           # SQLite logs, cost tracking, feedback, admin panel
-│   └── webhooks.py               # Webhook dispatcher + sidebar settings UI
+│   ├── data_loader.py         # World Bank + FRED API + synthetic fallback
+│   ├── db.py                  # Supabase (prod) / SQLite (dev) persistence layer
+│   ├── security.py            # Auth, rate limiting, roles, login wall
+│   ├── insights.py            # Business callouts, alert thresholds, PDF export
+│   ├── usage_logger.py        # Admin panel (delegates to db.py)
+│   ├── webhooks.py            # Webhook dispatcher + sidebar UI
+│   ├── models.py              # NN training (train/test split, persistence)
+│   ├── anomaly.py             # Z-score + Autoencoder
+│   ├── clustering.py          # Hierarchical + K-Means
+│   ├── forecasting.py         # LSTM per-country forecast
+│   ├── eda.py                 # Interactive EDA (Plotly)
+│   └── advanced_plots.py      # 3D, contour, hexbin, facet
 ├── .streamlit/
-│   └── secrets.toml              # Credentials + webhook URLs (never commit real secrets)
-├── requirements.txt
+│   ├── config.toml            # Theme (dark, brand colors)
+│   └── secrets.toml           # Credentials + API keys (never commit real values)
+├── Dockerfile                 # Self-hosted deployment
+├── requirements.txt           # Pinned dependencies
 └── README.md
 ```
 
@@ -66,106 +73,118 @@ inflation-dashboard/
 ## Quickstart
 
 ```bash
-# 1. Clone
 git clone https://github.com/SumedhPatil1507/global-inflation-dashboard.git
 cd global-inflation-dashboard/inflation-dashboard
 
-# 2. Install dependencies (use CPU torch to save ~1.5GB)
-pip install torch --index-url https://download.pytorch.org/whl/cpu
+# CPU-only torch (saves ~1.5GB)
+pip install torch==2.2.0+cpu --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 
-# 3. Run
 streamlit run app.py
 ```
 
-Default login credentials:
-| Username | Password |
-|---|---|
-| `demo` | `demo123` |
-| `admin` | `admin` |
+Default credentials:
+| Username | Password | Role |
+|---|---|---|
+| `demo` | `demo123` | analyst |
+| `admin` | `admin` | admin |
 
 ---
 
-## Data Sources
+## Docker
 
-| Variable | Source | World Bank Indicator |
-|---|---|---|
-| Inflation Rate (CPI) | World Bank | `FP.CPI.TOTL.ZG` |
-| GDP Growth | World Bank | `NY.GDP.MKTP.KD.ZG` |
-| Unemployment Rate | World Bank | `SL.UEM.TOTL.ZS` |
-| Lending Interest Rate | World Bank | `FR.INR.LEND` |
-| Oil Price, Food Index, M2, Supply Chain | Synthetic proxy | — |
-
-Data is fetched live via [wbgapi](https://pypi.org/project/wbgapi/). A fully synthetic fallback activates automatically if the API is unreachable.
+```bash
+cd inflation-dashboard
+docker build -t inflation-dashboard .
+docker run -p 8501:8501 inflation-dashboard
+# Open http://localhost:8501
+```
 
 ---
 
 ## Configuration
 
-### Credentials
-Edit `.streamlit/secrets.toml`:
-```toml
-[users]
-admin = "<sha256 of your password>"
-demo  = "<sha256 of your password>"
-```
-
-Generate a hash:
+### Add a new user
 ```bash
 python -c "import hashlib; print(hashlib.sha256(b'yourpassword').hexdigest())"
 ```
+Add to `.streamlit/secrets.toml`:
+```toml
+[users]
+yourname = "thehash:analyst"   # or :admin or :viewer
+```
 
-### Webhooks
-Add your URLs to `.streamlit/secrets.toml`:
+### Enable Supabase (persistent DB)
+1. Create project at [supabase.com](https://supabase.com)
+2. Run in Supabase SQL editor:
+```sql
+create table usage_logs (
+  id serial primary key, ts text, username text,
+  action text, detail text, tokens int default 0, cost_usd float default 0
+);
+create table feedback (
+  id serial primary key, ts text, username text,
+  page text, rating int, comment text
+);
+```
+3. Add to `secrets.toml`:
+```toml
+[supabase]
+url = "https://your-project.supabase.co"
+key = "your-anon-key"
+```
+
+### Enable FRED API (real US monthly data)
+1. Get free key at [fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html)
+2. Add to `secrets.toml`:
+```toml
+[fred]
+api_key = "your_fred_api_key"
+```
+
+### Enable Webhooks
 ```toml
 [webhooks]
 forecast_done     = "https://hooks.slack.com/services/..."
 anomaly_found     = "https://hooks.slack.com/services/..."
 model_trained     = "https://hooks.slack.com/services/..."
 feedback_received = "https://hooks.slack.com/services/..."
+threshold_breach  = "https://hooks.slack.com/services/..."
 ```
 
-Supported destinations: Slack, Discord, Make.com, Zapier, webhook.site, or any HTTP POST endpoint.
+---
 
-Webhook payload format:
-```json
-{
-  "event": "forecast_done",
-  "timestamp": "2026-04-21T10:00:00",
-  "user": "demo",
-  "country": "USA",
-  "horizon": 5
-}
-```
+## Data Sources
+
+| Variable | Source | Indicator |
+|---|---|---|
+| Inflation (CPI) | World Bank | `FP.CPI.TOTL.ZG` |
+| GDP Growth | World Bank | `NY.GDP.MKTP.KD.ZG` |
+| Unemployment | World Bank | `SL.UEM.TOTL.ZS` |
+| Lending Rate | World Bank | `FR.INR.LEND` |
+| US CPI (monthly) | FRED | `CPIAUCSL` |
+| US Fed Funds Rate | FRED | `FEDFUNDS` |
+| US Unemployment | FRED | `UNRATE` |
+| Oil, Food, M2, Supply Chain | Synthetic proxy | — |
 
 ---
 
 ## ML Models
 
-### Neural Network (Inflation Predictor)
-- Architecture: 3-layer feedforward (64 → 32 → 1)
-- Features: interest rate, oil price, GDP growth, unemployment, food price index, supply chain index
-- Evaluation: MSE, R², confidence score badge
-- Feature importance via permutation method
-
-### LSTM (Forecasting)
-- Architecture: 2-layer LSTM (hidden=64) with dropout
-- Input: historical annual CPI series per country
-- Output: N-year autoregressive forecast with ±1σ confidence band
-
-### Autoencoder (Anomaly Detection)
-- Architecture: encoder (6→32→8) + decoder (8→32→6)
-- Anomalies flagged at configurable reconstruction error percentile
+| Model | Architecture | Evaluation |
+|---|---|---|
+| Inflation Predictor | 3-layer NN (64→32→1) + Dropout | 80/20 train/test split, MSE + R² |
+| LSTM Forecaster | 2-layer LSTM (hidden=64) + Dropout | Autoregressive, ±1σ confidence band |
+| Anomaly Autoencoder | Encoder (6→32→8) + Decoder | Reconstruction error percentile threshold |
 
 ---
 
-## Deployment
+## Deployment — Streamlit Cloud
 
-### Streamlit Community Cloud (free)
 1. Push to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect repo → main file: `inflation-dashboard/app.py`
-4. Add secrets in the Streamlit Cloud secrets UI (same format as `secrets.toml`)
+2. Go to [share.streamlit.io](https://share.streamlit.io) → Create app
+3. Repo: `SumedhPatil1507/global-inflation-dashboard` · File: `inflation-dashboard/app.py`
+4. Advanced settings → paste `secrets.toml` contents → Deploy
 
 ### Update on GitHub
 ```bash
@@ -179,28 +198,10 @@ git push
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| UI | Streamlit |
-| Visualization | Plotly, Matplotlib |
-| ML / DL | PyTorch, scikit-learn |
-| Data | World Bank API (wbgapi), pandas, numpy |
-| Clustering | scipy |
-| Auth | hashlib, hmac (SHA-256) |
-| Storage | SQLite (usage.db) |
-| Notifications | HTTP webhooks (requests) |
-
----
-
-## Impact
-
-- Covers 6 distinct ML/DL techniques in a single deployable app
-- Enterprise patterns (auth, audit logs, cost tracking, webhooks) that most data science portfolios skip
-- Live data integration — not a static CSV demo
-- Real-world use cases: central bank monitoring, investment risk tracking, supply chain cost forecasting, policy research
+Streamlit · PyTorch · Plotly · Supabase · FRED API · World Bank API · scikit-learn · scipy · ReportLab · Docker · GitHub Actions
 
 ---
 
 ## License
 
-MIT — free to use, modify, and deploy.
+MIT

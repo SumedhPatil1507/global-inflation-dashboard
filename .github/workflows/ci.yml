@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU torch
+        run: |
+          pip install torch==2.2.0+cpu \
+            --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: |
+          pip install -r inflation-dashboard/requirements.txt
+          pip install flake8
+
+      - name: Lint (flake8)
+        run: |
+          flake8 inflation-dashboard/ \
+            --max-line-length=120 \
+            --exclude=inflation-dashboard/modules/__pycache__ \
+            --ignore=E501,W503
+
+      - name: Smoke test — import all modules
+        run: |
+          cd inflation-dashboard
+          python -c "
+          from modules.data_loader  import get_data
+          from modules.security     import current_user, current_role, can_access
+          from modules.db           import log_action, submit_feedback
+          from modules.insights     import generate_insights, check_alerts
+          from modules.models       import train_and_evaluate
+          from modules              import eda, anomaly, clustering, forecasting, advanced_plots
+          print('All modules imported successfully')
+          "
+
+      - name: Smoke test — synthetic data pipeline
+        run: |
+          cd inflation-dashboard
+          python -c "
+          from modules.data_loader import get_data
+          from modules.insights    import generate_insights
+          df = get_data(source='synthetic', start_year=2020, end_year=2023)
+          assert len(df) > 0, 'Empty dataframe'
+          insights = generate_insights(df)
+          print(f'Data rows: {len(df)}, Insights: {len(insights)}')
+          print('Pipeline smoke test passed')
+          "
