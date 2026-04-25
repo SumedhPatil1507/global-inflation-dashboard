@@ -83,9 +83,20 @@ def fetch_fred_monthly(start_year: int = 2020, end_year: int = 2024) -> pd.DataF
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_world_bank(start_year: int = 2020, end_year: int = 2024) -> pd.DataFrame:
-    """Fetch annual data from World Bank via wbgapi."""
+    """Fetch annual data from World Bank via wbgapi. Times out gracefully."""
     try:
         import wbgapi as wb
+        import signal
+
+        def _timeout_handler(signum, frame):
+            raise TimeoutError("World Bank API timeout")
+
+        # 15s timeout (Unix only — skipped on Windows)
+        try:
+            signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(15)
+        except (AttributeError, OSError):
+            pass  # Windows doesn't support SIGALRM
     except ImportError:
         return pd.DataFrame()
 
@@ -162,13 +173,16 @@ def get_data(source: str = "live", start_year: int = 2020, end_year: int = 2024)
     if source != "live":
         return _synthetic_data(start_year, end_year)
 
-    wb_df   = fetch_world_bank(start_year, end_year)
-    fred_df = fetch_fred_monthly(start_year, end_year)
+    # Try live sources — fall back to synthetic immediately on any timeout
+    try:
+        wb_df   = fetch_world_bank(start_year, end_year)
+        fred_df = fetch_fred_monthly(start_year, end_year)
+    except Exception:
+        return _synthetic_data(start_year, end_year)
 
     if wb_df.empty and fred_df.empty:
         return _synthetic_data(start_year, end_year)
 
-    # Merge FRED into WB — FRED overrides USA rows if available
     if not wb_df.empty and not fred_df.empty:
         wb_no_usa = wb_df[wb_df["country"] != "USA"]
         df = pd.concat([wb_no_usa, fred_df], ignore_index=True)

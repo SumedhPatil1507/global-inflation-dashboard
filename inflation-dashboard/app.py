@@ -3,11 +3,11 @@
 🌍 Global Inflation Insights — Production Dashboard
 World Bank + FRED live data · PyTorch ML · Supabase · Role-based auth
 """
+# Only import what's needed at startup — torch/scipy/sklearn loaded lazily per tab
 import base64
 import streamlit as st
 import pandas as pd
 import numpy as np
-import torch
 
 st.set_page_config(
     page_title="Global Inflation Insights",
@@ -41,17 +41,39 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Imports ───────────────────────────────────────────────────────────────────
+# ── Lightweight imports only at startup ───────────────────────────────────────
 from modules.security     import login_wall, logout_button, current_user, current_role, can_access
 from modules.db           import log_action, submit_feedback
 from modules.usage_logger import render_admin_panel
 from modules.webhooks     import fire, render_webhook_settings
 from modules.data_loader  import get_data
-from modules.insights     import render_insights, render_alert_settings, check_alerts, export_pdf
-from modules              import eda, anomaly, clustering, forecasting, advanced_plots
-from modules.models       import (train_and_evaluate, load_saved_model,
-                                   actual_vs_predicted_plot, loss_curve_plot,
-                                   permutation_importance)
+from modules.insights     import render_insights, render_alert_settings, check_alerts
+
+# Heavy modules — imported lazily inside tabs so startup is instant
+def _eda():
+    from modules import eda; return eda
+
+def _anomaly():
+    from modules import anomaly; return anomaly
+
+def _clustering():
+    from modules import clustering; return clustering
+
+def _forecasting():
+    from modules import forecasting; return forecasting
+
+def _advanced():
+    from modules import advanced_plots; return advanced_plots
+
+def _models():
+    from modules.models import (train_and_evaluate, load_saved_model,
+                                actual_vs_predicted_plot, loss_curve_plot,
+                                permutation_importance)
+    return train_and_evaluate, load_saved_model, actual_vs_predicted_plot, \
+           loss_curve_plot, permutation_importance
+
+def _export_pdf():
+    from modules.insights import export_pdf; return export_pdf
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 login_wall()
@@ -89,7 +111,8 @@ with st.sidebar:
     st.caption("Global Inflation Insights · World Bank · FRED · PyTorch")
 
 # ── Load data ─────────────────────────────────────────────────────────────────
-with st.spinner("Fetching data…"):
+# ── Load data — synthetic first, live on demand ───────────────────────────────
+with st.spinner("Loading data…"):
     df_raw = get_data(source=source_key, start_year=year_range[0], end_year=year_range[1])
 
 all_countries = sorted(df_raw["country"].unique().tolist())
@@ -164,6 +187,7 @@ with tabs[0]:
     if not can_access("eda"):
         st.warning("Your role does not have access to this section.")
     else:
+        eda = _eda()
         st.markdown('<p class="section-header">Distribution of Key Variables</p>', unsafe_allow_html=True)
         st.plotly_chart(eda.histogram_grid(df), use_container_width=True)
 
@@ -228,6 +252,9 @@ with tabs[2]:
     if not can_access("models"):
         st.warning("Upgrade to Analyst or Admin to access ML models.")
     else:
+        train_and_evaluate, load_saved_model, actual_vs_predicted_plot, \
+            loss_curve_plot, permutation_importance = _models()
+        import torch
         st.markdown('<p class="section-header">Neural Network — Inflation Predictor</p>', unsafe_allow_html=True)
         st.info("Trained on 80% of data, evaluated on held-out 20% test set.")
 
@@ -280,6 +307,7 @@ with tabs[3]:
     if not can_access("anomaly"):
         st.warning("Upgrade to Analyst or Admin to access anomaly detection.")
     else:
+        anomaly = _anomaly()
         st.markdown('<p class="section-header">Z-Score Anomaly Detection</p>', unsafe_allow_html=True)
         z_thresh = st.slider("Z-Score Threshold", 1.5, 5.0, 3.0, 0.5, key="z_thresh")
         df_z, anom_z = anomaly.zscore_anomalies(df, threshold=z_thresh)
@@ -309,6 +337,7 @@ with tabs[4]:
     if not can_access("clustering"):
         st.warning("Your role does not have access to clustering.")
     else:
+        clustering = _clustering()
         st.markdown('<p class="section-header">Hierarchical Clustering</p>', unsafe_allow_html=True)
         dend_b64 = clustering.dendrogram_figure(df)
         st.image(base64.b64decode(dend_b64), use_container_width=True)
@@ -329,6 +358,7 @@ with tabs[5]:
     if not can_access("forecasting"):
         st.warning("Upgrade to Analyst or Admin to access forecasting.")
     else:
+        forecasting = _forecasting()
         st.markdown('<p class="section-header">LSTM Inflation Forecasting</p>', unsafe_allow_html=True)
         fc_country = st.selectbox(
             "Select Country", all_countries,
@@ -371,7 +401,8 @@ with tabs[5]:
                 st.markdown("---")
                 if st.button("📄 Export PDF Report", key="pdf_btn"):
                     with st.spinner("Generating PDF…"):
-                        pdf_bytes = export_pdf(df_raw, fc_country, [fc_fig])
+                        export_pdf = _export_pdf()
+                        pdf_bytes  = export_pdf(df_raw, fc_country, [fc_fig])
                     st.download_button("⬇️ Download PDF", pdf_bytes,
                                        f"{fc_country}_inflation_report.pdf", "application/pdf")
 
@@ -389,6 +420,7 @@ with tabs[6]:
     if not can_access("advanced"):
         st.warning("Your role does not have access to advanced plots.")
     else:
+        advanced_plots = _advanced()
         st.markdown('<p class="section-header">3D: Oil × Food × Inflation</p>', unsafe_allow_html=True)
         st.plotly_chart(advanced_plots.scatter_3d(df), use_container_width=True)
 
