@@ -1,27 +1,17 @@
-# Core
+# All packages pinned to versions with pre-built wheels for Python 3.11
+# Nothing here requires compilation from source
+
 streamlit==1.32.0
 pandas==2.1.4
 numpy==1.26.4
 plotly==5.18.0
 matplotlib==3.8.3
 seaborn==0.13.2
-
-# ML / DL — CPU only (saves ~1.5GB vs GPU build)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.2.0+cpu
+scipy==1.12.0
 scikit-learn==1.4.1
-
-# Data sources
-wbgapi==1.0.12
 requests==2.31.0
-
-# Database — Supabase
+wbgapi==1.0.12
 supabase==2.3.4
-
-# PDF export
 reportlab==4.1.0
 kaleido==0.2.1
-
-# Utilities
-scipy==1.12.0
 python-dotenv==1.0.1
