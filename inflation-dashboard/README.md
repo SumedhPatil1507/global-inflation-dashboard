@@ -1,6 +1,6 @@
 # 🌍 Global Inflation Insights Dashboard
 
-Production-grade economic analytics platform — live World Bank + FRED data, PyTorch ML, Supabase persistence, role-based auth, PDF export, and enterprise reporting.
+Production-grade economic analytics platform with a **FastAPI async backend**, **Celery + Redis task queue**, **JWT stateless auth**, **real live data** (FRED + yfinance + World Bank), and a **Streamlit frontend** with 12 analytical tabs.
 
 ## Live Demo
 
@@ -10,153 +10,206 @@ Production-grade economic analytics platform — live World Bank + FRED data, Py
 
 ---
 
-## What's Inside
+## Architecture
 
-### Analytics
-| Module | Description |
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                      PRESENTATION LAYER                              │
+│                    Streamlit  (app.py)                               │
+│   JWT Auth · 12 Tabs · Role-gated UI · PDF Export · Webhooks        │
+└───────────────────────────┬──────────────────────────────────────────┘
+                            │  HTTP (httpx / requests)
+                            ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                      FASTAPI BACKEND  (:8000)                        │
+│  /api/auth/token  →  JWT issue                                       │
+│  /api/data/combined  →  FRED + yfinance + World Bank merge           │
+│  /api/ml/train       →  enqueue Celery task → return task_id         │
+│  /api/ml/forecast    →  enqueue Celery task → return task_id         │
+│  /api/ml/monte-carlo →  enqueue Celery task → return task_id         │
+│  /api/ml/tasks/{id}  →  poll result                                  │
+└──────────┬────────────────────────────────────────────────┬──────────┘
+           │  Celery tasks                                  │  SQL
+           ▼                                                ▼
+┌─────────────────────────┐                   ┌────────────────────────┐
+│   CELERY WORKER         │                   │  SUPABASE POSTGRES     │
+│   (async ML runtime)    │                   │  usage_logs            │
+│                         │                   │  feedback              │
+│  PyTorch NN training    │                   │  (SQLite fallback      │
+│  LSTM forecasting       │                   │   for local dev)       │
+│  Monte Carlo sim        │                   └────────────────────────┘
+│  Autoencoder anomaly    │
+└──────────┬──────────────┘
+           │  broker + results
+           ▼
+┌─────────────────────────┐
+│   REDIS  (:6379)        │
+│   Task queue            │
+│   Result backend        │
+└─────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                        DATA LAYER                                    │
+│                                                                      │
+│  FRED API          → CPI, Fed Funds Rate, Unemployment, M2 (real)   │
+│  yfinance          → WTI Oil, Gold futures, DBA food ETF (real)     │
+│  World Bank API    → 19 countries, 4 macro indicators (annual)      │
+│  Synthetic fallback→ when all APIs unavailable                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│                      SECURITY LAYER                                  │
+│                                                                      │
+│  JWT (python-jose)  → stateless tokens, 60min expiry, refresh       │
+│  bcrypt             → password hashing in FastAPI backend            │
+│  SHA-256 + hmac     → local fallback (Streamlit Cloud, no backend)  │
+│  Rate limiting      → 5 attempts → 5min lockout (session state)     │
+│  Role-based access  → admin · analyst · viewer                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Features
+
+### Analytics (12 Tabs)
+| Tab | Description |
 |---|---|
 | EDA | Sub-tabs: Data Diagnostics · Distributions · Correlations |
-| Insights | Auto-generated Z-score flags, real rate gaps, deflationary signals |
+| Insights | Auto Z-score flags, real rate gaps, deflationary signals |
 | Trading Signals | Carry trade signals, regime switching allocator, country signal table |
-| ML Models | PyTorch NN (sklearn Ridge fallback) · 80/20 split · permutation importance |
-| Anomaly Detection | Z-score + Autoencoder (Z-score fallback when torch unavailable) |
+| ML Models | PyTorch NN / sklearn Ridge · 80/20 split · permutation importance |
+| Anomaly Detection | Z-score + Autoencoder (graceful fallback without torch) |
 | Clustering | Hierarchical dendrogram + K-Means elbow + scatter |
 | LSTM Forecasting | Per-country forecast · confidence band · PDF export |
-| Portfolio Stress Tester | Stagflation/hyperinflation/deflation/custom · Sharpe ratio · Monte Carlo · cumulative wealth · max drawdown |
+| Portfolio Stress Tester | Stagflation/hyperinflation/deflation · Sharpe · Monte Carlo · drawdown |
 | Advanced Plots | 3D scatter · contour density · hexbin · facet grid |
+| Data Editor | Live editable table · CSV + JSON export |
+| Feedback | In-app rating form |
+| Admin | Usage logs · cost tracking · feedback review |
 
 ### Enterprise
 | Feature | Description |
 |---|---|
-| Auth | SHA-256 login · rate limiting (5 attempts → 5min lockout) · role-based access |
-| Roles | `admin` · `analyst` · `viewer` — each sees different tabs |
-| Alert Thresholds | Configurable inflation/unemployment alerts → webhook fires on breach |
-| Supabase DB | Persistent logs + feedback (SQLite fallback for local dev) |
-| Usage Logs | Every action logged with timestamp, user, cost estimate |
-| Cost Tracking | Daily cost chart in admin panel |
-| Feedback Loop | In-app rating form, stored and reviewable by admin |
-| Webhooks | POST to Slack, Discord, Make.com, Zapier on 5 event types |
-| PDF Export | One-click country report with data table + charts + insights |
-| Data Editor | Live editable table with CSV + JSON download |
-| FRED API | Real monthly US data (CPI, Fed Funds Rate, Unemployment) |
-| Docker | Single-command self-hosted deployment |
-| CI/CD | GitHub Actions — lint + smoke test on every push |
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    PRESENTATION LAYER                           │
-│                   Streamlit (app.py)                            │
-│  Auth · KPI Cards · 12 Tabs · Role-gated UI · PDF Export       │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-         ┌───────────────┼───────────────────┐
-         ▼               ▼                   ▼
-┌────────────────┐ ┌──────────────┐ ┌───────────────────┐
-│  DATA LAYER    │ │  ML RUNTIME  │ │  ENTERPRISE LAYER │
-│                │ │  (PyTorch /  │ │                   │
-│ World Bank API │ │   sklearn)   │ │ Supabase Postgres │
-│ FRED API       │ │              │ │ (usage_logs,      │
-│ Synthetic      │ │ NN Predictor │ │  feedback)        │
-│ fallback       │ │ LSTM Forecast│ │                   │
-│                │ │ Autoencoder  │ │ SQLite (local dev)│
-│ data_loader.py │ │ Stress Tester│ │ db.py             │
-└────────────────┘ │ Monte Carlo  │ └───────────────────┘
-                   └──────────────┘
-         ┌───────────────┼───────────────────┐
-         ▼               ▼                   ▼
-┌────────────────┐ ┌──────────────┐ ┌───────────────────┐
-│ SIGNAL LAYER   │ │ WEBHOOK      │ │  SECURITY LAYER   │
-│                │ │ WORKER       │ │                   │
-│ Regime Switch  │ │              │ │ SHA-256 + hmac    │
-│ Carry Trade    │ │ Slack        │ │ Rate limiting     │
-│ Yield Optimizer│ │ Discord      │ │ Role-based access │
-│ Signal Table   │ │ Make.com     │ │ Session state     │
-│                │ │ Zapier       │ │                   │
-│trading_signals │ │ webhooks.py  │ │ security.py       │
-└────────────────┘ └──────────────┘ └───────────────────┘
-```
+| JWT Auth | FastAPI issues tokens · Streamlit validates · 60min expiry + refresh |
+| Local fallback | SHA-256 + hmac when no backend configured |
+| Rate limiting | 5 failed attempts → 5min lockout |
+| Role-based access | admin · analyst · viewer — tab-level gating |
+| Async ML | Celery + Redis queues heavy LSTM/Monte Carlo jobs |
+| Real data | FRED (M2, CPI, rates) + yfinance (Oil, Gold, Food) — no synthetic proxies |
+| Supabase DB | Persistent logs + feedback (SQLite fallback) |
+| Webhooks | Slack/Discord/Make.com on 5 event types |
+| PDF Export | Country report with charts + insights |
+| Docker | Full stack via docker-compose |
+| CI/CD | GitHub Actions — frontend + backend lint + smoke tests |
 
 ---
 
 ## Project Structure
 
 ```
-inflation-dashboard/
-├── app.py                     # Main app — all tabs, auth, KPIs
-├── modules/
-│   ├── data_loader.py         # World Bank + FRED API + synthetic fallback
-│   ├── db.py                  # Supabase (prod) / SQLite (dev) persistence layer
-│   ├── security.py            # Auth, rate limiting, roles, login wall
-│   ├── insights.py            # Business callouts, alert thresholds, PDF export
-│   ├── usage_logger.py        # Admin panel (delegates to db.py)
-│   ├── webhooks.py            # Webhook dispatcher + sidebar UI
-│   ├── models.py              # NN training (train/test split, persistence)
-│   ├── anomaly.py             # Z-score + Autoencoder
-│   ├── clustering.py          # Hierarchical + K-Means
-│   ├── forecasting.py         # LSTM per-country forecast
-│   ├── eda.py                 # Interactive EDA (Plotly)
-│   └── advanced_plots.py      # 3D, contour, hexbin, facet
-├── .streamlit/
-│   ├── config.toml            # Theme (dark, brand colors)
-│   └── secrets.toml           # Credentials + API keys (never commit real values)
-├── Dockerfile                 # Self-hosted deployment
-├── requirements.txt           # Pinned dependencies
+.
+├── backend/                        # FastAPI async backend
+│   ├── main.py                     # App entry point
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── core/
+│   │   ├── config.py               # Pydantic settings (env vars)
+│   │   └── security.py             # JWT issue/verify, bcrypt, role guards
+│   ├── api/routers/
+│   │   ├── auth.py                 # POST /api/auth/token, GET /api/auth/me
+│   │   ├── data.py                 # GET /api/data/combined, /countries
+│   │   └── ml.py                   # POST /api/ml/train|forecast|monte-carlo
+│   ├── services/
+│   │   ├── data_service.py         # FRED + yfinance + World Bank fetchers
+│   │   └── ml_service.py           # PyTorch NN, LSTM, Monte Carlo
+│   └── workers/
+│       ├── celery_app.py           # Celery + Redis config
+│       └── tasks.py                # Async task definitions
+│
+├── inflation-dashboard/            # Streamlit frontend
+│   ├── app.py                      # Main app — 12 tabs
+│   ├── modules/
+│   │   ├── security.py             # JWT + local auth, rate limiting, roles
+│   │   ├── data_loader.py          # FRED + yfinance + WB + synthetic fallback
+│   │   ├── db.py                   # Supabase / SQLite persistence
+│   │   ├── insights.py             # Business callouts, alerts, PDF export
+│   │   ├── trading_signals.py      # Regime switching, carry trade, yield optimizer
+│   │   ├── forecasting.py          # LSTM + stress tester + Monte Carlo plots
+│   │   ├── models.py               # NN training, feature importance
+│   │   ├── anomaly.py              # Z-score + Autoencoder
+│   │   ├── clustering.py           # Hierarchical + K-Means
+│   │   ├── eda.py                  # EDA plots
+│   │   ├── advanced_plots.py       # 3D, contour, hexbin, facet
+│   │   ├── usage_logger.py         # Admin panel
+│   │   └── webhooks.py             # Webhook dispatcher
+│   ├── .streamlit/
+│   │   ├── config.toml             # Dark theme
+│   │   └── secrets.toml            # Credentials + API keys
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── runtime.txt                 # python-3.11.9
+│
+├── docker-compose.yml              # Full stack: api + worker + redis + frontend
+├── .env.example                    # Environment variable template
+├── .github/workflows/ci.yml        # CI: frontend + backend lint + smoke tests
 └── README.md
 ```
 
 ---
 
-## Quickstart
+## Quickstart — Local (Streamlit only)
 
 ```bash
 git clone https://github.com/SumedhPatil1507/global-inflation-dashboard.git
 cd global-inflation-dashboard/inflation-dashboard
 
-# CPU-only torch (saves ~1.5GB)
-pip install torch==2.2.0+cpu --index-url https://download.pytorch.org/whl/cpu
+pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 
 streamlit run app.py
 ```
 
-Default credentials:
-| Username | Password | Role |
-|---|---|---|
-| `demo` | `demo123` | analyst |
-| `admin` | `admin` | admin |
+Credentials: `demo` / `demo123` · `admin` / `admin`
 
 ---
 
-## Docker
+## Quickstart — Full Stack (Docker)
 
 ```bash
-cd inflation-dashboard
-docker build -t inflation-dashboard .
-docker run -p 8501:8501 inflation-dashboard
-# Open http://localhost:8501
+cp .env.example .env
+# Edit .env — add FRED_API_KEY, JWT_SECRET_KEY, SUPABASE_URL/KEY
+
+docker-compose up --build
+# Frontend: http://localhost:8501
+# API docs: http://localhost:8000/docs
 ```
 
 ---
 
 ## Configuration
 
-### Add a new user
-```bash
-python -c "import hashlib; print(hashlib.sha256(b'yourpassword').hexdigest())"
-```
-Add to `.streamlit/secrets.toml`:
+### secrets.toml (Streamlit Cloud)
 ```toml
 [users]
-yourname = "thehash:analyst"   # or :admin or :viewer
+admin = "sha256hash:admin"
+demo  = "sha256hash:analyst"
+
+[backend]
+url = "https://your-api.railway.app"   # enables JWT auth
+
+[fred]
+api_key = "your_fred_api_key"          # enables real M2, CPI, rates
+
+[supabase]
+url = "https://your-project.supabase.co"
+key = "your-anon-key"
+
+[webhooks]
+forecast_done = "https://hooks.slack.com/services/..."
 ```
 
-### Enable Supabase (persistent DB)
-1. Create project at [supabase.com](https://supabase.com)
-2. Run in Supabase SQL editor:
+### Supabase tables
 ```sql
 create table usage_logs (
   id serial primary key, ts text, username text,
@@ -167,70 +220,32 @@ create table feedback (
   page text, rating int, comment text
 );
 ```
-3. Add to `secrets.toml`:
-```toml
-[supabase]
-url = "https://your-project.supabase.co"
-key = "your-anon-key"
-```
-
-### Enable FRED API (real US monthly data)
-1. Get free key at [fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html)
-2. Add to `secrets.toml`:
-```toml
-[fred]
-api_key = "your_fred_api_key"
-```
-
-### Enable Webhooks
-```toml
-[webhooks]
-forecast_done     = "https://hooks.slack.com/services/..."
-anomaly_found     = "https://hooks.slack.com/services/..."
-model_trained     = "https://hooks.slack.com/services/..."
-feedback_received = "https://hooks.slack.com/services/..."
-threshold_breach  = "https://hooks.slack.com/services/..."
-```
 
 ---
 
 ## Data Sources
 
-| Variable | Source | Indicator |
+| Variable | Source | Real / Synthetic |
 |---|---|---|
-| Inflation (CPI) | World Bank | `FP.CPI.TOTL.ZG` |
-| GDP Growth | World Bank | `NY.GDP.MKTP.KD.ZG` |
-| Unemployment | World Bank | `SL.UEM.TOTL.ZS` |
-| Lending Rate | World Bank | `FR.INR.LEND` |
-| US CPI (monthly) | FRED | `CPIAUCSL` |
-| US Fed Funds Rate | FRED | `FEDFUNDS` |
-| US Unemployment | FRED | `UNRATE` |
-| Oil, Food, M2, Supply Chain | Synthetic proxy | — |
+| CPI Inflation | FRED `CPIAUCSL` | ✅ Real |
+| Fed Funds Rate | FRED `FEDFUNDS` | ✅ Real |
+| Unemployment | FRED `UNRATE` | ✅ Real |
+| GDP Growth | FRED `A191RL1Q225SBEA` | ✅ Real |
+| Money Supply M2 | FRED `M2SL` | ✅ Real |
+| WTI Oil Price | yfinance `CL=F` | ✅ Real |
+| Gold Price | yfinance `GC=F` | ✅ Real |
+| Food Price Index | yfinance `DBA` | ✅ Real (ETF proxy) |
+| 19-country macro | World Bank API | ✅ Real |
+| Supply Chain Index | Hardcoded 2020-2024 estimates | ⚠️ Approximate |
 
 ---
 
-## ML Models
+## Update on GitHub
 
-| Model | Architecture | Evaluation |
-|---|---|---|
-| Inflation Predictor | 3-layer NN (64→32→1) + Dropout | 80/20 train/test split, MSE + R² |
-| LSTM Forecaster | 2-layer LSTM (hidden=64) + Dropout | Autoregressive, ±1σ confidence band |
-| Anomaly Autoencoder | Encoder (6→32→8) + Decoder | Reconstruction error percentile threshold |
-
----
-
-## Deployment — Streamlit Cloud
-
-1. Push to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io) → Create app
-3. Repo: `SumedhPatil1507/global-inflation-dashboard` · File: `inflation-dashboard/app.py`
-4. Advanced settings → paste `secrets.toml` contents → Deploy
-
-### Update on GitHub
 ```bash
 cd C:\Users\Sumedh\projects\global-inflation-dashboard
 git add .
-git commit -m "your message"
+git commit -m "feat: FastAPI backend, Celery+Redis, JWT auth, real FRED+yfinance data"
 git push
 ```
 
@@ -238,7 +253,17 @@ git push
 
 ## Tech Stack
 
-Streamlit · PyTorch · Plotly · Supabase · FRED API · World Bank API · scikit-learn · scipy · ReportLab · Docker · GitHub Actions
+| Layer | Technology |
+|---|---|
+| Frontend | Streamlit |
+| Backend | FastAPI + Uvicorn |
+| Task Queue | Celery + Redis |
+| ML/DL | PyTorch · scikit-learn |
+| Auth | JWT (python-jose) · bcrypt · SHA-256 fallback |
+| Data | FRED API · yfinance · World Bank (wbgapi) |
+| Database | Supabase Postgres · SQLite (dev) |
+| Visualization | Plotly · Matplotlib |
+| Infrastructure | Docker · docker-compose · GitHub Actions |
 
 ---
 

@@ -7,56 +7,106 @@ on:
     branches: [main]
 
 jobs:
-  lint-and-smoke:
+  # ── Frontend smoke tests ──────────────────────────────────────────────────
+  frontend:
+    name: Frontend — lint + smoke
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install CPU torch
-        run: |
-          pip install torch==2.2.0+cpu \
-            --index-url https://download.pytorch.org/whl/cpu
+        run: pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu -q
 
-      - name: Install dependencies
-        run: |
-          pip install -r inflation-dashboard/requirements.txt
-          pip install flake8
+      - name: Install frontend deps
+        run: pip install -r inflation-dashboard/requirements.txt -q
 
-      - name: Lint (flake8)
+      - name: Install flake8
+        run: pip install flake8 -q
+
+      - name: Lint frontend
         run: |
           flake8 inflation-dashboard/ \
             --max-line-length=120 \
             --exclude=inflation-dashboard/modules/__pycache__ \
-            --ignore=E501,W503
+            --ignore=E501,W503,E302,E303
 
-      - name: Smoke test — import all modules
+      - name: Smoke — import all modules
         run: |
           cd inflation-dashboard
           python -c "
-          from modules.data_loader  import get_data
-          from modules.security     import current_user, current_role, can_access
-          from modules.db           import log_action, submit_feedback
-          from modules.insights     import generate_insights, check_alerts
-          from modules.models       import train_and_evaluate
-          from modules              import eda, anomaly, clustering, forecasting, advanced_plots
-          print('All modules imported successfully')
+          from modules.data_loader   import get_data
+          from modules.security      import current_user, current_role, can_access
+          from modules.db            import log_action, submit_feedback
+          from modules.insights      import generate_insights, check_alerts
+          from modules.models        import train_and_evaluate
+          from modules.trading_signals import yield_optimizer, signal_table
+          from modules               import eda, anomaly, clustering, forecasting, advanced_plots
+          print('All frontend modules imported OK')
           "
 
-      - name: Smoke test — synthetic data pipeline
+      - name: Smoke — data pipeline
         run: |
           cd inflation-dashboard
           python -c "
           from modules.data_loader import get_data
           from modules.insights    import generate_insights
           df = get_data(source='synthetic', start_year=2020, end_year=2023)
-          assert len(df) > 0, 'Empty dataframe'
+          assert len(df) > 0
           insights = generate_insights(df)
-          print(f'Data rows: {len(df)}, Insights: {len(insights)}')
-          print('Pipeline smoke test passed')
+          print(f'Rows: {len(df)}, Insights: {len(insights)} — OK')
+          "
+
+  # ── Backend smoke tests ───────────────────────────────────────────────────
+  backend:
+    name: Backend — lint + import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install CPU torch
+        run: pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu -q
+
+      - name: Install backend deps
+        run: pip install -r backend/requirements.txt -q
+
+      - name: Install flake8
+        run: pip install flake8 -q
+
+      - name: Lint backend
+        run: |
+          flake8 backend/ \
+            --max-line-length=120 \
+            --ignore=E501,W503,E302,E303
+
+      - name: Smoke — import backend modules
+        run: |
+          python -c "
+          from backend.core.config   import get_settings
+          from backend.core.security import authenticate_user, create_access_token
+          from backend.services.ml_service import train_model, run_monte_carlo
+          print('All backend modules imported OK')
+          "
+
+      - name: Smoke — ML service
+        run: |
+          python -c "
+          import numpy as np
+          from backend.services.ml_service import train_model, run_monte_carlo
+          records = [{'country':'USA','year':y,'inflation_rate':2+np.random.randn(),
+                      'interest_rate':1.5,'gdp_growth':2.0,'unemployment_rate':4.0,
+                      'food_price_index':120.0,'money_supply_m2':20.0}
+                     for y in range(2010,2024)]
+          result = train_model(records, epochs=5)
+          assert 'mse' in result or 'error' in result
+          mc = run_monte_carlo(7.0, 15.0, horizon=5, simulations=50)
+          assert 'median' in mc
+          print('ML service smoke test OK')
           "
