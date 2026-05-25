@@ -87,10 +87,10 @@ st.markdown(f'<div class="cb">📚 <b>Source:</b> {src} · Updated: {updated} ·
 st.markdown("---")
 
 # ── KPI Cards ─────────────────────────────────────────────────────────────────
-avg_inf  = df["inflation_rate"].mean() if not df.empty else 0
-max_inf  = df["inflation_rate"].max()  if not df.empty else 0
-min_inf  = df["inflation_rate"].min()  if not df.empty else 0
-n_ctries = df["country"].nunique()     if not df.empty else 0
+avg_inf  = df["inflation_rate"].mean() if (not df.empty and "inflation_rate" in df.columns) else 0
+max_inf  = df["inflation_rate"].max()  if (not df.empty and "inflation_rate" in df.columns) else 0
+min_inf  = df["inflation_rate"].min()  if (not df.empty and "inflation_rate" in df.columns) else 0
+n_ctries = df["country"].nunique()     if (not df.empty and "country" in df.columns) else 0
 
 for col, label, val, fmt in zip(
     st.columns(4),

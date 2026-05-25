@@ -239,4 +239,8 @@ def get_data(source: str = "live", start_year: int = 2020,
     else:
         df = wb_df
 
+    # Safety — if inflation_rate missing or all NaN, fall back to synthetic
+    if "inflation_rate" not in df.columns or df["inflation_rate"].isna().all():
+        return _synthetic_data(start_year, end_year)
+
     return df.reset_index(drop=True)
