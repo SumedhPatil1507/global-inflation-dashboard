@@ -15,20 +15,22 @@ Production-grade economic analytics platform — live World Bank + FRED data, Py
 ### Analytics
 | Module | Description |
 |---|---|
-| EDA | Histograms, trends, boxplots, violin, heatmap, scatter matrix |
-| Insights | Auto-generated business callouts — Z-score flags, real rate gaps, deflationary signals |
-| ML Models | PyTorch NN with 80/20 train/test split, loss curve, permutation feature importance |
-| Anomaly Detection | Z-score + Autoencoder deep learning |
+| EDA | Sub-tabs: Data Diagnostics · Distributions · Correlations |
+| Insights | Auto-generated Z-score flags, real rate gaps, deflationary signals |
+| Trading Signals | Carry trade signals, regime switching allocator, country signal table |
+| ML Models | PyTorch NN (sklearn Ridge fallback) · 80/20 split · permutation importance |
+| Anomaly Detection | Z-score + Autoencoder (Z-score fallback when torch unavailable) |
 | Clustering | Hierarchical dendrogram + K-Means elbow + scatter |
-| LSTM Forecasting | Per-country forecast with confidence band + PDF export |
-| Advanced Plots | 3D scatter, contour density, hexbin, facet grid |
+| LSTM Forecasting | Per-country forecast · confidence band · PDF export |
+| Portfolio Stress Tester | Stagflation/hyperinflation/deflation/custom · Sharpe ratio · Monte Carlo · cumulative wealth · max drawdown |
+| Advanced Plots | 3D scatter · contour density · hexbin · facet grid |
 
 ### Enterprise
 | Feature | Description |
 |---|---|
-| Auth | SHA-256 login, rate limiting (5 attempts → 5min lockout), role-based access |
+| Auth | SHA-256 login · rate limiting (5 attempts → 5min lockout) · role-based access |
 | Roles | `admin` · `analyst` · `viewer` — each sees different tabs |
-| Alert Thresholds | User-configurable inflation/unemployment alerts → webhook fires on breach |
+| Alert Thresholds | Configurable inflation/unemployment alerts → webhook fires on breach |
 | Supabase DB | Persistent logs + feedback (SQLite fallback for local dev) |
 | Usage Logs | Every action logged with timestamp, user, cost estimate |
 | Cost Tracking | Daily cost chart in admin panel |
@@ -39,6 +41,44 @@ Production-grade economic analytics platform — live World Bank + FRED data, Py
 | FRED API | Real monthly US data (CPI, Fed Funds Rate, Unemployment) |
 | Docker | Single-command self-hosted deployment |
 | CI/CD | GitHub Actions — lint + smoke test on every push |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    PRESENTATION LAYER                           │
+│                   Streamlit (app.py)                            │
+│  Auth · KPI Cards · 12 Tabs · Role-gated UI · PDF Export       │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+         ┌───────────────┼───────────────────┐
+         ▼               ▼                   ▼
+┌────────────────┐ ┌──────────────┐ ┌───────────────────┐
+│  DATA LAYER    │ │  ML RUNTIME  │ │  ENTERPRISE LAYER │
+│                │ │  (PyTorch /  │ │                   │
+│ World Bank API │ │   sklearn)   │ │ Supabase Postgres │
+│ FRED API       │ │              │ │ (usage_logs,      │
+│ Synthetic      │ │ NN Predictor │ │  feedback)        │
+│ fallback       │ │ LSTM Forecast│ │                   │
+│                │ │ Autoencoder  │ │ SQLite (local dev)│
+│ data_loader.py │ │ Stress Tester│ │ db.py             │
+└────────────────┘ │ Monte Carlo  │ └───────────────────┘
+                   └──────────────┘
+         ┌───────────────┼───────────────────┐
+         ▼               ▼                   ▼
+┌────────────────┐ ┌──────────────┐ ┌───────────────────┐
+│ SIGNAL LAYER   │ │ WEBHOOK      │ │  SECURITY LAYER   │
+│                │ │ WORKER       │ │                   │
+│ Regime Switch  │ │              │ │ SHA-256 + hmac    │
+│ Carry Trade    │ │ Slack        │ │ Rate limiting     │
+│ Yield Optimizer│ │ Discord      │ │ Role-based access │
+│ Signal Table   │ │ Make.com     │ │ Session state     │
+│                │ │ Zapier       │ │                   │
+│trading_signals │ │ webhooks.py  │ │ security.py       │
+└────────────────┘ └──────────────┘ └───────────────────┘
+```
 
 ---
 

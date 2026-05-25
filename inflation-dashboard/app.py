@@ -370,10 +370,33 @@ with tabs[7]:
             df_stress = run_stress_test(base_inf, scenario, c_inf, c_unemp, horizon, weights)
             st.plotly_chart(stress_test_plot(df_stress, scenario), use_container_width=True)
             st.plotly_chart(portfolio_bar(df_stress), use_container_width=True)
-            worst = df_stress.groupby("Asset")["Real Return (%)"].mean().idxmin()
-            best  = df_stress.groupby("Asset")["Real Return (%)"].mean().idxmax()
-            st.markdown(f'<div class="cb">🔴 Worst performer: <b>{worst}</b> · '
-                        f'🟢 Best performer: <b>{best}</b></div>', unsafe_allow_html=True)
+
+            from modules.forecasting import (cumulative_wealth_plot, sharpe_table,
+                                              monte_carlo_plot)
+            st.markdown('<p class="sh">Cumulative Wealth ($1 Invested)</p>',
+                        unsafe_allow_html=True)
+            st.plotly_chart(cumulative_wealth_plot(df_stress, scenario), use_container_width=True)
+
+            st.markdown('<p class="sh">Risk-Adjusted Performance (Sharpe Ratio)</p>',
+                        unsafe_allow_html=True)
+            df_sharpe = sharpe_table(df_stress)
+            st.dataframe(df_sharpe, use_container_width=True)
+
+            st.markdown('<p class="sh">Monte Carlo Simulation</p>', unsafe_allow_html=True)
+            best_asset = df_sharpe.iloc[0]["Asset"]
+            best_ret   = df_stress[df_stress["Asset"]==best_asset]["Real Return (%)"].mean()
+            best_vol   = df_stress[df_stress["Asset"]==best_asset]["Real Return (%)"].std()
+            st.plotly_chart(monte_carlo_plot(best_ret, best_vol, horizon,
+                                             simulations=300, asset_name=best_asset),
+                            use_container_width=True)
+
+            worst = df_sharpe.iloc[-1]["Asset"]
+            best  = df_sharpe.iloc[0]["Asset"]
+            st.markdown(f'<div class="cb">🔴 Worst risk-adjusted: <b>{worst}</b> '
+                        f'(Sharpe: {df_sharpe.iloc[-1]["Sharpe Ratio"]}) · '
+                        f'🟢 Best risk-adjusted: <b>{best}</b> '
+                        f'(Sharpe: {df_sharpe.iloc[0]["Sharpe Ratio"]})</div>',
+                        unsafe_allow_html=True)
             log_action(user, "stress_test", f"scenario={scenario}", rows=horizon)
         else:
             st.markdown("👆 Configure scenario and click **Run Stress Test**.")

@@ -168,15 +168,22 @@ def run_stress_test(base_inflation: float, scenario_name: str,
 
 
 def stress_test_plot(df_stress: pd.DataFrame, scenario_name: str) -> go.Figure:
-    pivot = df_stress.pivot_table(index="Year", columns="Asset",
-                                  values="Real Return (%)", aggfunc="mean")
-    fig = px.line(pivot.reset_index().melt(id_vars="Year"),
-                  x="Year", y="value", color="variable",
-                  title=f"Portfolio Stress Test — {scenario_name}",
-                  labels={"value": "Real Return (%)", "variable": "Asset"})
+    # Build long-form directly from df_stress — avoids pivot/melt column naming issues
+    fig = go.Figure()
+    for asset in df_stress["Asset"].unique():
+        sub = df_stress[df_stress["Asset"] == asset].sort_values("Year")
+        fig.add_trace(go.Scatter(
+            x=sub["Year"], y=sub["Real Return (%)"],
+            mode="lines+markers", name=asset,
+        ))
     fig.add_hline(y=0, line_dash="dash", line_color="red",
                   annotation_text="Break-even")
-    fig.update_layout(height=450, hovermode="x unified")
+    fig.update_layout(
+        title=f"Portfolio Stress Test — {scenario_name}",
+        xaxis_title="Year", yaxis_title="Real Return (%)",
+        height=450, hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
     return fig
 
 
@@ -185,7 +192,93 @@ def portfolio_bar(df_stress: pd.DataFrame) -> go.Figure:
     last    = df_stress[df_stress["Year"] == last_yr]
     fig = px.bar(last, x="Asset", y="Real Return (%)", color="Real Return (%)",
                  color_continuous_scale="RdYlGn",
-                 title=f"Final Year Real Returns by Asset")
+                 title="Final Year Real Returns by Asset")
     fig.add_hline(y=0, line_dash="dash", line_color="red")
     fig.update_layout(height=380)
+    return fig
+
+
+def cumulative_wealth_plot(df_stress: pd.DataFrame, scenario_name: str) -> go.Figure:
+    """Compound $1 invested in each asset over the horizon."""
+    fig = go.Figure()
+    for asset in df_stress["Asset"].unique():
+        sub     = df_stress[df_stress["Asset"] == asset].sort_values("Year")
+        returns = sub["Real Return (%)"].values / 100
+        wealth  = np.cumprod(1 + returns)
+        fig.add_trace(go.Scatter(
+            x=sub["Year"].values, y=wealth,
+            mode="lines+markers", name=asset,
+            hovertemplate="%{y:.3f}x<extra>%{fullData.name}</extra>",
+        ))
+    fig.add_hline(y=1.0, line_dash="dot", line_color="gray",
+                  annotation_text="Initial $1")
+    fig.update_layout(
+        title=f"Cumulative Wealth ($1 Invested) — {scenario_name}",
+        xaxis_title="Year", yaxis_title="Portfolio Value ($)",
+        height=420, hovermode="x unified",
+    )
+    return fig
+
+
+def sharpe_table(df_stress: pd.DataFrame, risk_free: float = 0.02) -> pd.DataFrame:
+    """Compute annualised Sharpe ratio per asset."""
+    rows = []
+    for asset in df_stress["Asset"].unique():
+        sub = df_stress[df_stress["Asset"] == asset].sort_values("Year")
+        r   = sub["Real Return (%)"].values / 100
+        mu  = np.mean(r)
+        sd  = np.std(r) + 1e-9
+        sharpe = (mu - risk_free) / sd
+        max_dd = _max_drawdown(r)
+        rows.append({
+            "Asset":           asset,
+            "Avg Real Return": f"{mu*100:.2f}%",
+            "Volatility":      f"{sd*100:.2f}%",
+            "Sharpe Ratio":    f"{sharpe:.2f}",
+            "Max Drawdown":    f"{max_dd*100:.2f}%",
+            "Signal":          "🟢 BUY" if sharpe > 0.5 else ("🔴 AVOID" if sharpe < 0 else "⚪ HOLD"),
+        })
+    return pd.DataFrame(rows).sort_values("Sharpe Ratio", ascending=False)
+
+
+def _max_drawdown(returns: np.ndarray) -> float:
+    wealth = np.cumprod(1 + returns)
+    peak   = np.maximum.accumulate(wealth)
+    dd     = (wealth - peak) / (peak + 1e-9)
+    return float(dd.min())
+
+
+def monte_carlo_plot(base_return: float, volatility: float,
+                     horizon: int = 10, simulations: int = 200,
+                     asset_name: str = "Portfolio") -> go.Figure:
+    """Monte Carlo simulation of asset return paths."""
+    rng  = np.random.default_rng(42)
+    fig  = go.Figure()
+    final_vals = []
+    for i in range(simulations):
+        r      = rng.normal(base_return / 100, volatility / 100, horizon)
+        wealth = np.cumprod(1 + r)
+        final_vals.append(wealth[-1])
+        color  = "rgba(56,189,248,0.08)"
+        fig.add_trace(go.Scatter(
+            x=list(range(1, horizon + 1)), y=wealth.tolist(),
+            mode="lines", line=dict(color=color, width=1),
+            showlegend=False, hoverinfo="skip",
+        ))
+    # Median path
+    med_r  = rng.normal(base_return / 100, volatility / 100, (1000, horizon))
+    median = np.median(np.cumprod(1 + med_r, axis=1), axis=0)
+    fig.add_trace(go.Scatter(
+        x=list(range(1, horizon + 1)), y=median.tolist(),
+        mode="lines", name="Median Path",
+        line=dict(color="#38bdf8", width=3),
+    ))
+    p5  = np.percentile(final_vals, 5)
+    p95 = np.percentile(final_vals, 95)
+    fig.update_layout(
+        title=f"Monte Carlo ({simulations} paths) — {asset_name} | "
+              f"P5: ${p5:.2f}  Median: ${np.median(final_vals):.2f}  P95: ${p95:.2f}",
+        xaxis_title="Year", yaxis_title="Portfolio Value ($1 invested)",
+        height=450,
+    )
     return fig
