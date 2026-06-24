@@ -1,17 +1,26 @@
 # Global Inflation Dashboard
 
 ## Overview
-
-A production‑grade FastAPI backend that ingests macroeconomic data, trains ML models, and serves forecasts. It uses:
+A production‑grade FastAPI backend combined with a Streamlit frontend that visualizes macro‑economic indicators and market asset data. The system leverages:
 - **PostgreSQL + TimescaleDB** for time‑series storage
-- **Asyncpg** for asynchronous DB access
-- **Celery + Redis** for background training jobs
-- **Redis** for caching heavy queries
+- **Asyncpg** for async DB access
+- **Celery + Redis** for background model training jobs
+- **Redis** for heavy‑query caching
 - **RS256 JWT** authentication with RSA keys
 - **Immutable audit trail** for every API request
+- **Streamlit app** for interactive visualisation
+
+## Streamlit Frontend
+The live dashboard is hosted at:
+https://global-inflation-dashboard-cmuugxnnh2kqffda2e78app.streamlit.app/
+
+You can run the Streamlit UI locally with:
+```bash
+streamlit run streamlit/app.py
+```
 
 ## Architecture Diagram
-*(Skipped as per user request)*
+*(Add architecture diagram image here if desired)*
 
 ## Environment Variables
 | Variable | Description | Example |
@@ -27,8 +36,7 @@ A production‑grade FastAPI backend that ingests macroeconomic data, trains ML 
 | `APP_ENV` | Application environment (`development`, `staging`, `production`) | `development` |
 
 ## Setup & Development
-
-1. **Clone the repo**
+1. **Clone the repository**
    ```bash
    git clone <repo-url>
    cd global-inflation-dashboard
@@ -36,12 +44,12 @@ A production‑grade FastAPI backend that ingests macroeconomic data, trains ML 
 2. **Create a virtual environment & install dependencies**
    ```bash
    python -m venv venv
-   source venv/bin/activate   # on Windows: venv\Scripts\activate
+   venv\Scripts\activate   # Windows
    pip install -r requirements.txt
    ```
 3. **Configure environment**
    - Copy `.env.example` to `.env` and fill in the values above.
-   - Ensure RSA key files exist at the paths configured.
+   - Ensure RSA key files exist at the configured paths.
 4. **Run database migrations**
    ```bash
    psql -f backend/migrations.sql
@@ -50,13 +58,14 @@ A production‑grade FastAPI backend that ingests macroeconomic data, trains ML 
    ```bash
    docker-compose up -d
    ```
-   This brings up PostgreSQL (with TimescaleDB), Redis, and a Celery worker.
 6. **Start the FastAPI server**
    ```bash
    uvicorn backend.main:app --reload --port 8000
    ```
-7. **Trigger weekly model training**
-   Celery beat is configured (see `backend/workers/celery_app.py`). The task `train_and_serialize_models` runs weekly, stores serialized models under `backend/models/registry/` as Joblib files.
+7. **Start the Streamlit UI** (optional, for local dev)
+   ```bash
+   streamlit run streamlit/app.py
+   ```
 
 ## API Endpoints
 | Method | Path | Description |
@@ -68,7 +77,7 @@ A production‑grade FastAPI backend that ingests macroeconomic data, trains ML 
 | `GET` | `/health` | Health check |
 
 ## Audit Trail
-All API requests are logged immutably in the `security_audit_ledger` table by the `AuditMiddleware`. The log includes user, role, IP, endpoint, method, request payload, execution time, and a cryptographic request signature.
+All API requests are logged immutably in the `security_audit_ledger` table by `AuditMiddleware`. Logged fields include user, role, IP, endpoint, method, request payload, execution time, and a cryptographic request signature.
 
 ## Testing
 ```bash
@@ -76,15 +85,15 @@ pytest tests/    # runs the test suite
 ```
 
 ## Deployment
-- Build Docker image: `docker build -t inflation-dashboard .`
-- Push to registry and deploy via your preferred orchestrator.
+- **Docker image**: `docker build -t inflation-dashboard .`
+- Push the image to your registry and deploy via your orchestrator of choice.
 
 ## Git Workflow
 ```bash
 git add .
-git commit -m "Implement ML service refactor, backtester, audit trail, Redis cache, and README updates"
+git commit -m "Refresh README, add Streamlit URL, and finalize backend updates"
 git push origin main
 ```
 
 ---
-*All changes are production‑ready and follow best‑practice security, observability, and performance guidelines.*
+*All components follow best‑practice security, observability, and performance guidelines.*
