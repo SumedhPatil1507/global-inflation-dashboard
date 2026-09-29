@@ -1,99 +1,157 @@
-# Global Inflation Dashboard
+# 🌐 Global Inflation Insights & Macro Intelligence Dashboard
 
-## Overview
-A production‑grade FastAPI backend combined with a Streamlit frontend that visualizes macro‑economic indicators and market asset data. The system leverages:
-- **PostgreSQL + TimescaleDB** for time‑series storage
-- **Asyncpg** for async DB access
-- **Celery + Redis** for background model training jobs
-- **Redis** for heavy‑query caching
-- **RS256 JWT** authentication with RSA keys
-- **Immutable audit trail** for every API request
-- **Streamlit app** for interactive visualisation
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://global-inflation-dashboard-cmuugxnnh2kqffda2e78app.streamlit.app/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111.0-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Step%20Agent-blue.svg)](https://langchain-ai.github.io/langgraph/)
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
+[![Security](https://img.shields.io/badge/Auth-RS256%20JWT%20%2B%20RBAC-green.svg)](https://jwt.io/)
 
-## Streamlit Frontend
-The live dashboard is hosted at:
-https://global-inflation-dashboard-cmuugxnnh2kqffda2e78app.streamlit.app/
+A production-grade macroeconomic intelligence platform combining an asynchronous **FastAPI** backend, **LangGraph** autonomous research agent, **Dense RAG** knowledge retrieval over central bank publications, **Quantitative Portfolio Backtesting**, and a rich **Streamlit** multi-tab visualization dashboard.
 
-You can run the Streamlit UI locally with:
-```bash
-streamlit run streamlit/app.py
+---
+
+## 🚀 Live Cloud Deployment
+
+Access the interactive live Streamlit dashboard directly in your browser:
+👉 **[https://global-inflation-dashboard-cmuugxnnh2kqffda2e78app.streamlit.app/](https://global-inflation-dashboard-cmuugxnnh2kqffda2e78app.streamlit.app/)**
+
+---
+
+## 🏛️ System Architecture
+
 ```
-
-## Architecture Diagram
-*(Add architecture diagram image here if desired)*
-
-## Environment Variables
-| Variable | Description | Example |
-|---|---|---|
-| `DATABASE_URL` | Asyncpg DSN for PostgreSQL | `postgresql+asyncpg://postgres:secure_vault_pass@postgres-db:5432/macro_analytics` |
-| `RSA_PRIVATE_KEY_PATH` | Path to RSA private key for JWT signing | `certs/private_key.pem` |
-| `RSA_PUBLIC_KEY_PATH` | Path to RSA public key for JWT verification | `certs/public_key.pem` |
-| `REDIS_URL` | Redis instance for generic caching | `redis://redis-queue:6379/0` |
-| `CELERY_BROKER_URL` | Celery broker (Redis) | `redis://redis-queue:6379/0` |
-| `CELERY_RESULT_BACKEND` | Celery result backend (Redis) | `redis://redis-queue:6379/1` |
-| `REDIS_CACHE_URL` | Dedicated Redis cache for data‑heavy functions | `redis://redis-queue:6379/2` |
-| `AUDIT_TABLE_NAME` | Table storing immutable audit logs | `security_audit_ledger` |
-| `APP_ENV` | Application environment (`development`, `staging`, `production`) | `development` |
-
-## Setup & Development
-1. **Clone the repository**
-   ```bash
-   git clone <repo-url>
-   cd global-inflation-dashboard
-   ```
-2. **Create a virtual environment & install dependencies**
-   ```bash
-   python -m venv venv
-   venv\Scripts\activate   # Windows
-   pip install -r requirements.txt
-   ```
-3. **Configure environment**
-   - Copy `.env.example` to `.env` and fill in the values above.
-   - Ensure RSA key files exist at the configured paths.
-4. **Run database migrations**
-   ```bash
-   psql -f backend/migrations.sql
-   ```
-5. **Start services** (Docker Compose is recommended)
-   ```bash
-   docker-compose up -d
-   ```
-6. **Start the FastAPI server**
-   ```bash
-   uvicorn backend.main:app --reload --port 8000
-   ```
-7. **Start the Streamlit UI** (optional, for local dev)
-   ```bash
-   streamlit run streamlit/app.py
-   ```
-
-## API Endpoints
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/api/auth/token` | Obtain JWT (RS256) |
-| `POST` | `/api/ml/train` | Submit training job (Celery) |
-| `POST` | `/api/ml/predict` | Stateless inference using latest serialized model |
-| `POST` | `/api/quant/backtest` | Run backtest on supplied parameters |
-| `GET` | `/health` | Health check |
-
-## Audit Trail
-All API requests are logged immutably in the `security_audit_ledger` table by `AuditMiddleware`. Logged fields include user, role, IP, endpoint, method, request payload, execution time, and a cryptographic request signature.
-
-## Testing
-```bash
-pytest tests/    # runs the test suite
-```
-
-## Deployment
-- **Docker image**: `docker build -t inflation-dashboard .`
-- Push the image to your registry and deploy via your orchestrator of choice.
-
-## Git Workflow
-```bash
-git add .
-git commit -m "Refresh README, add Streamlit URL, and finalize backend updates"
-git push origin main
+                                  ┌──────────────────────────────────────────────┐
+                                  │           Streamlit Frontend (UI)           │
+                                  │  - 13 Specialized Analytical Tabs           │
+                                  │  - Interactive Plotly Visualizations         │
+                                  │  - LangGraph Macro Agent Interactive Console │
+                                  └──────────────────────┬───────────────────────┘
+                                                         │
+                                                         │ HTTP REST / RS256 JWT
+                                                         ▼
+                                  ┌──────────────────────────────────────────────┐
+                                  │            FastAPI Backend Engine            │
+                                  │  - RS256 Scoped JWT Auth & RBAC Middleware   │
+                                  │  - Immutable Audit Trail (Ledger)            │
+                                  │  - CORS & Rate-Limiting Controls             │
+                                  └──────┬───────────────┬───────────────┬───────┘
+                                         │               │               │
+                 ┌───────────────────────┘               │               └───────────────────────┐
+                 ▼                                       ▼                                       ▼
+  ┌──────────────────────────────┐        ┌──────────────────────────────┐        ┌──────────────────────────────┐
+  │   LangGraph Macro Agent      │        │    Quantitative Engine       │        │     Data & Model Services    │
+  │  1. Planner & Decomposition  │        │  - Multi-Asset Backtest      │        │  - FRED + World Bank APIs    │
+  │  2. Macro Time-Series API    │        │  - Sharpe / Max Drawdown     │        │  - PyTorch NN Inflation Reg  │
+  │  3. RAG Central Bank Corpus  │        │  - Equity & Underwater Curves│        │  - Celery Worker / Redis Q   │
+  │  4. Research Memo Synthesis  │        │  - Dynamic Asset Allocation  │        │  - TimescaleDB / PostgreSQL  │
+  └──────────────────────────────┘        └──────────────────────────────┘        └──────────────────────────────┘
 ```
 
 ---
-*All components follow best‑practice security, observability, and performance guidelines.*
+
+## ✨ Key Features & Analytical Modules
+
+| Tab # | Module | Core Capabilities |
+|---|---|---|
+| **Tab 0** | **📊 Exploratory Data Analysis (EDA)** | Boxplots, violin distributions, metric trendlines, correlation matrices, and regional heatmaps across 18+ global economies. |
+| **Tab 1** | **💡 Automated Business Insights** | Auto-synthesized executive takeaways, real interest rate spreads ($r = i - \pi$), and historical percentile rankings. |
+| **Tab 2** | **🔬 Macro Research Agent (LangGraph + RAG)** | Autonomous multi-step economic reasoning engine with tool access to FRED/World Bank data endpoints, quantitative portfolio backtesters, and dense RAG over World Bank & RBI publications. |
+| **Tab 3** | **📈 Trading Signals & Regimes** | Inflation-adjusted yield carry trade optimizer and 4-quadrant regime switching allocator (Stagflation, Goldilocks, Reflation, Deflation). |
+| **Tab 4** | **🤖 Machine Learning Models** | Deep PyTorch Neural Network / Ridge regression with held-out test evaluation, loss curves, and permutation feature importance. |
+| **Tab 5** | **🔍 Anomaly Detection** | Isolation Forest multivariate anomaly scoring highlighting geopolitical and pandemic inflation spikes. |
+| **Tab 6** | **🔬 Macro Clustering** | Unsupervised K-Means clustering identifying macroeconomic archetypes and policy regimes. |
+| **Tab 7** | **🔮 Time-Series Forecasting** | Statistical ARIMA, Facebook Prophet, and Vector Autoregression (VAR) multi-country co-movement modeling. |
+| **Tab 8** | **💥 Macro Stress Testing** | Scenario simulation engine (Energy Shock, Supply Disruption, Monetary Tightening, Stagflation). |
+| **Tab 9** | **🎨 Advanced Visualizations** | Radar charts, 3D metric scatter plots, and country-by-country facet grids. |
+| **Tab 10** | **✏️ Interactive Data Editor** | In-browser dataframe editing with CSV and JSON data export capabilities. |
+| **Tab 11** | **💬 User Feedback & Audit** | In-app feedback loop with real-time state telemetry. |
+| **Tab 12** | **🛡️ Admin Panel & Audit Ledger** | User role administration and cryptographically signed audit log inspector. |
+
+---
+
+## 🛠️ Technology Stack
+
+- **Frontend:** Streamlit, Plotly, Seaborn, Matplotlib, ReportLab (PDF Export)
+- **Backend:** FastAPI, Uvicorn, Pydantic v2, Python-Jose (RS256), Cryptography
+- **Orchestration & Agents:** LangGraph, StateGraph, Custom Semantic Vector RAG
+- **Quantitative & ML:** PyTorch, Scikit-Learn, NumPy, Pandas, SciPy, Statsmodels
+- **Data Integrations:** Federal Reserve Economic Data (FRED), World Bank API (`wbgapi`), Yahoo Finance (`yfinance`)
+- **Infrastructure & Storage:** PostgreSQL / TimescaleDB, Redis, Celery, Docker & Docker Compose
+
+---
+
+## 🚦 Getting Started Locally
+
+### 1. Clone the Repository
+```bash
+git clone https://github.com/SumedhPatil1507/global-inflation-dashboard.git
+cd global-inflation-dashboard
+```
+
+### 2. Create Virtual Environment & Install Dependencies
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies for dashboard and backend
+pip install -r inflation-dashboard/requirements.txt
+pip install -r backend/requirements.txt
+```
+
+### 3. Run the Streamlit Dashboard
+```bash
+streamlit run inflation-dashboard/app.py
+```
+The application will launch at `http://localhost:8501`.
+
+### 4. (Optional) Run the FastAPI Backend Server
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+Interactive API documentation will be available at `http://localhost:8000/docs`.
+
+### 5. (Optional) Full Docker Compose Deployment
+```bash
+docker-compose up --build -d
+```
+
+---
+
+## 🔐 Authentication, RBAC & Scopes
+
+The API and Dashboard employ asymmetric **RS256 JWT** authentication with granular scope-based permissions:
+
+| Role | JWT Scopes Assigned | Accessible Dashboard Tabs |
+|---|---|---|
+| **Admin** | `admin:all`, `macro:research`, `macro:read`, `quant:backtest`, `ml:train` | All Tabs (0 – 12) + Admin Panel |
+| **Analyst** | `macro:research`, `macro:read`, `quant:backtest`, `ml:train` | Tabs 0 – 11 |
+| **Viewer** | `macro:read` | EDA, Insights, Macro Agent, Clustering, Advanced |
+
+*Note: Demo logins are configured out-of-the-box (`admin` / `analyst` / `viewer`). RSA keypairs (`certs/private_key.pem` and `certs/public_key.pem`) are automatically provisioned on launch if absent.*
+
+---
+
+## 📡 Key REST API Endpoints
+
+| Method | Endpoint | Scopes / Roles | Description |
+|---|---|---|---|
+| `POST` | `/api/auth/token` | Public | Obtain RS256 JWT access token |
+| `POST` | `/api/macro/research` | `macro:research` / Analyst | Execute LangGraph Macro Research Agent with multi-step reasoning |
+| `GET` | `/api/macro/rag/reports` | `macro:research` / Analyst | Semantic search over World Bank and RBI research corpus |
+| `POST` | `/api/quant/backtest` | `quant:backtest` / Analyst | Multi-asset quantitative inflation-hedge portfolio backtest |
+| `POST` | `/api/ml/train` | `ml:train` / Analyst | Asynchronous model training task via Celery |
+| `POST` | `/api/ml/predict` | `macro:read` / Viewer | Neural network inflation forecast inference |
+| `GET` | `/health` | Public | System health check & active feature flags |
+
+---
+
+## 📄 License & Attribution
+
+Designed and engineered for institutional macroeconomic research, quantitative analysis, and educational exploration. 
+Data sourced via FRED (Federal Reserve Bank of St. Louis), World Bank Open Data, and public central bank releases.

@@ -12,10 +12,10 @@ import streamlit as st
 
 ROLES = {
     "admin":   ["eda","models","anomaly","clustering","forecasting",
-                "advanced","editor","feedback","admin"],
+                "advanced","editor","feedback","admin","macro_agent"],
     "analyst": ["eda","models","anomaly","clustering","forecasting",
-                "advanced","editor","feedback"],
-    "viewer":  ["eda","clustering","advanced"],
+                "advanced","editor","feedback","macro_agent"],
+    "viewer":  ["eda","clustering","advanced","macro_agent"],
 }
 
 _DEFAULT_USERS = {

@@ -16,3 +16,4 @@ yfinance==0.2.40
 supabase==2.3.4
 python-dotenv==1.0.1
 torch==2.2.0
+langgraph>=0.0.30

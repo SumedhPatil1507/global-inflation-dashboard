@@ -1,4 +1,4 @@
-﻿"""
+"""
 Global Inflation Insights — Production Dashboard
 World Bank + FRED · PyTorch/sklearn ML · Supabase · Role-based auth
 """
@@ -7,8 +7,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Global Inflation Insights", page_icon="📊",
-                   layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="Global Inflation Insights",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 st.markdown("""<style>
 [data-testid="stSidebar"]{background:#0f172a}
@@ -104,10 +108,10 @@ st.markdown("")
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 tabs = st.tabs([
-    "📊 EDA", "💡 Insights", "📈 Signals",
+    "📊 EDA", "💡 Insights", "🔬 Macro Agent", "📈 Signals",
     "🤖 ML Models", "🔍 Anomaly", "🔬 Clustering",
     "🔮 Forecasting", "💥 Stress Test",
-    "🎨 Advanced", "✏️ Data Editor", "💬 Feedback", "��️ Admin",
+    "🎨 Advanced", "✏️ Data Editor", "💬 Feedback", "🛡️ Admin",
 ])
 
 # ── TAB 0: EDA ────────────────────────────────────────────────────────────────
@@ -162,8 +166,17 @@ with tabs[1]:
         st.plotly_chart(fig_gap, use_container_width=True)
     log_action(user, "insights_view", rows=len(df))
 
-# ── TAB 2: Trading Signals ────────────────────────────────────────────────────
+# ── TAB 2: Macro Research Agent ───────────────────────────────────────────────
 with tabs[2]:
+    if not can_access("macro_agent"):
+        st.warning("Access restricted.")
+    else:
+        from modules.agent_ui import render_macro_research_agent
+        render_macro_research_agent(user, role)
+        log_action(user, "macro_agent_view", rows=len(df))
+
+# ── TAB 3: Trading Signals ────────────────────────────────────────────────────
+with tabs[3]:
     if not can_access("models"):
         st.warning("Upgrade to Analyst or Admin.")
     else:
@@ -194,8 +207,8 @@ with tabs[2]:
             st.dataframe(df_sig.reset_index(drop=True), use_container_width=True)
         log_action(user, "signals_view", rows=len(df))
 
-# ── TAB 3: ML Models ─────────────────────────────────────────────────────────
-with tabs[3]:
+# ── TAB 4: ML Models ─────────────────────────────────────────────────────────
+with tabs[4]:
     if not can_access("models"):
         st.warning("Upgrade to Analyst or Admin.")
     else:
@@ -242,8 +255,8 @@ with tabs[3]:
         else:
             st.markdown("👆 Click **Train Model** to run.")
 
-# ── TAB 4: Anomaly ────────────────────────────────────────────────────────────
-with tabs[4]:
+# ── TAB 5: Anomaly ────────────────────────────────────────────────────────────
+with tabs[5]:
     if not can_access("anomaly"):
         st.warning("Upgrade to Analyst or Admin.")
     else:
@@ -259,80 +272,86 @@ with tabs[4]:
         st.markdown('<p class="sh">Autoencoder Anomaly Detection</p>', unsafe_allow_html=True)
         ae_pct = st.slider("Anomaly Percentile", 80, 99, 95, key="ae_pct")
         if st.button("🔍 Run Autoencoder", key="ae_btn"):
-            with st.spinner("Training autoencoder…"):
-                df_ae, ae_thresh = _anom.autoencoder_anomalies(df, percentile=ae_pct)
-            st.plotly_chart(_anom.autoencoder_plot(df_ae, ae_thresh), use_container_width=True)
-            n_ae = int(df_ae["is_anomaly"].sum())
-            st.caption(f"Detected **{n_ae}** anomalies.")
-            log_action(user, "anomaly_ae", f"n={n_ae}", rows=len(df))
-            fire("anomaly_found", {"user": user, "method": "autoencoder", "count": n_ae})
-        else:
-            st.markdown("👆 Click **Run Autoencoder**.")
+            with st.spinner("Training Autoencoder…"):
+                df_ae, anom_ae = _anom.autoencoder_anomalies(df, contamination=1-ae_pct/100)
+            if df_ae is not None:
+                st.plotly_chart(_anom.autoencoder_loss_plot(df_ae, anom_ae), use_container_width=True)
+                st.dataframe(anom_ae[["country","year","inflation_rate","reconstruction_error"]],
+                             use_container_width=True)
+                log_action(user, "anomaly_autoencoder", f"found={len(anom_ae)}", rows=len(df))
+        log_action(user, "anomaly_view", rows=len(df))
 
-# ── TAB 5: Clustering ─────────────────────────────────────────────────────────
-with tabs[5]:
+# ── TAB 6: Clustering ─────────────────────────────────────────────────────────
+with tabs[6]:
     if not can_access("clustering"):
         st.warning("Access restricted.")
     else:
         from modules import clustering as _clust
-        st.markdown('<p class="sh">Hierarchical Clustering</p>', unsafe_allow_html=True)
-        st.image(base64.b64decode(_clust.dendrogram_figure(df)), use_container_width=True)
-        c1,c2 = st.columns(2)
+        c1, c2 = st.columns([1, 2])
         with c1:
-            st.markdown('<p class="sh">Elbow Method</p>', unsafe_allow_html=True)
-            st.plotly_chart(_clust.elbow_plot(df), use_container_width=True)
+            st.markdown('<p class="sh">Clustering Controls</p>', unsafe_allow_html=True)
+            method = st.radio("Method", ["K-Means", "DBSCAN", "PCA Projection"], key="clust_m")
         with c2:
-            st.markdown(f'<p class="sh">K-Means (k={n_clusters})</p>', unsafe_allow_html=True)
-            st.plotly_chart(_clust.kmeans_scatter(df, k=n_clusters), use_container_width=True)
-        log_action(user, "clustering", f"k={n_clusters}", rows=len(df))
+            if method == "K-Means":
+                df_c, sil = _clust.kmeans_clustering(df, n_clusters)
+                st.plotly_chart(_clust.cluster_scatter(df_c, "cluster"), use_container_width=True)
+                st.metric("Silhouette Score", f"{sil:.3f}")
+            elif method == "DBSCAN":
+                df_c = _clust.dbscan_clustering(df)
+                st.plotly_chart(_clust.cluster_scatter(df_c, "cluster_dbscan"), use_container_width=True)
+            else:
+                pca_df, var = _clust.pca_reduction(df)
+                st.plotly_chart(_clust.pca_scatter(pca_df), use_container_width=True)
+                st.caption(f"Explained variance: PC1={var[0]:.1%}, PC2={var[1]:.1%}")
+        log_action(user, "clustering_view", f"method={method}", rows=len(df))
 
-# ── TAB 6: Forecasting ────────────────────────────────────────────────────────
-with tabs[6]:
+# ── TAB 7: Forecasting ────────────────────────────────────────────────────────
+with tabs[7]:
     if not can_access("forecasting"):
         st.warning("Upgrade to Analyst or Admin.")
     else:
-        from modules import forecasting as _fc
-        st.markdown('<p class="sh">LSTM Inflation Forecasting</p>', unsafe_allow_html=True)
-        fc_country = st.selectbox("Country", all_countries,
-                                  index=all_countries.index("USA") if "USA" in all_countries else 0,
-                                  key="fc_country")
-        if st.button("📈 Run Forecast", key="fc_btn"):
-            with st.spinner(f"Forecasting {fc_country}…"):
-                series, hist_years, future, future_years = _fc.forecast_country(
-                    df_raw, fc_country, forecast_years=forecast_years)
-            if series is not None:
-                fc_fig = _fc.forecast_plot(series, hist_years, future, future_years, fc_country)
-                st.plotly_chart(fc_fig, use_container_width=True)
-                fc_df = pd.DataFrame({
-                    "Year": future_years,
-                    "Forecast (%)": np.round(future, 3),
-                    "Lower (−1σ)":  np.round(future - np.std(series), 3),
-                    "Upper (+1σ)":  np.round(future + np.std(series), 3),
-                })
-                st.dataframe(fc_df, use_container_width=True)
-                cv   = np.std(series) / (np.mean(np.abs(series)) + 1e-8)
-                conf = max(0, 100 - cv * 100)
-                color= "#22c55e" if conf>=70 else "#f59e0b" if conf>=40 else "#ef4444"
-                st.markdown(f'<span class="badge" style="background:{color};color:#fff">'
-                            f'Forecast Confidence: {conf:.1f}%</span>', unsafe_allow_html=True)
-                st.markdown('<div class="cb">LSTM (hidden=64) or linear fallback. '
-                            'Confidence band = ±1σ historical. Not financial advice.</div>',
-                            unsafe_allow_html=True)
-                if st.button("📄 Export PDF", key="pdf_btn"):
-                    from modules.insights import export_pdf
-                    with st.spinner("Generating PDF…"):
-                        pdf_bytes = export_pdf(df_raw, fc_country, [fc_fig])
-                    st.download_button("⬇️ Download PDF", pdf_bytes,
-                                       f"{fc_country}_report.pdf", "application/pdf")
-                log_action(user, "forecast", f"country={fc_country}", rows=len(series))
-                fire("forecast_done", {"user": user, "country": fc_country})
+        from modules.forecasting import (run_arima_forecast, run_prophet_forecast,
+                                          run_var_forecast, forecast_plot,
+                                          var_multi_country_plot, PROPHET_OK)
+        st.markdown('<p class="sh">Macroeconomic Time-Series Forecasting</p>', unsafe_allow_html=True)
+        fc_country = st.selectbox("Country for Single-Series Forecast",
+                                  selected_countries or all_countries, key="fc_c")
+        fc_col1, fc_col2 = st.columns(2)
+        with fc_col1:
+            st.markdown("#### ARIMA Model")
+            df_sub = df[df["country"] == fc_country].sort_values("year")
+            if len(df_sub) >= 5:
+                df_arima = run_arima_forecast(df_sub, steps=forecast_years)
+                st.plotly_chart(forecast_plot(df_sub, df_arima, f"ARIMA — {fc_country}"),
+                                use_container_width=True)
             else:
-                st.warning("Not enough data for this country.")
-        else:
-            st.markdown("👆 Select a country and click **Run Forecast**.")
+                st.warning("Need at least 5 observations for ARIMA.")
 
-# ── TAB 7: Stress Test ────────────────────────────────────────────────────────
-with tabs[7]:
+        with fc_col2:
+            st.markdown("#### Prophet / Polynomial Model")
+            if len(df_sub) >= 5:
+                df_prophet = run_prophet_forecast(df_sub, steps=forecast_years)
+                tag = "Prophet" if PROPHET_OK else "Poly-Trend (Prophet fallback)"
+                st.plotly_chart(forecast_plot(df_sub, df_prophet, f"{tag} — {fc_country}"),
+                                use_container_width=True)
+            else:
+                st.warning("Need at least 5 observations.")
+
+        st.markdown("---")
+        st.markdown('<p class="sh">Vector Autoregression (VAR) Multi-Country Forecast</p>',
+                    unsafe_allow_html=True)
+        var_countries = (selected_countries or all_countries)[:4]
+        if len(var_countries) >= 2:
+            df_var_hist, df_var_fc = run_var_forecast(df, var_countries, steps=forecast_years)
+            if not df_var_fc.empty:
+                st.plotly_chart(var_multi_country_plot(df_var_hist, df_var_fc, var_countries),
+                                use_container_width=True)
+        else:
+            st.info("Select at least 2 countries to run VAR.")
+        log_action(user, "forecasting_view", f"country={fc_country}", rows=len(df))
+
+# ── TAB 8: Stress Test ────────────────────────────────────────────────────────
+with tabs[8]:
     if not can_access("models"):
         st.warning("Upgrade to Analyst or Admin.")
     else:
@@ -401,8 +420,8 @@ with tabs[7]:
         else:
             st.markdown("👆 Configure scenario and click **Run Stress Test**.")
 
-# ── TAB 8: Advanced ───────────────────────────────────────────────────────────
-with tabs[8]:
+# ── TAB 9: Advanced ───────────────────────────────────────────────────────────
+with tabs[9]:
     if not can_access("advanced"):
         st.warning("Access restricted.")
     else:
@@ -416,8 +435,8 @@ with tabs[8]:
         if facet_sel:
             st.plotly_chart(_adv.facet_inflation(df, facet_sel), use_container_width=True)
 
-# ── TAB 9: Data Editor ────────────────────────────────────────────────────────
-with tabs[9]:
+# ── TAB 10: Data Editor ───────────────────────────────────────────────────────
+with tabs[10]:
     if not can_access("editor"):
         st.warning("Upgrade to Analyst or Admin.")
     else:
@@ -432,8 +451,8 @@ with tabs[9]:
         with c2: st.download_button("⬇️ JSON", edited_df.to_json(orient="records",indent=2).encode(),
                                     "data.json","application/json")
 
-# ── TAB 10: Feedback ──────────────────────────────────────────────────────────
-with tabs[10]:
+# ── TAB 11: Feedback ──────────────────────────────────────────────────────────
+with tabs[11]:
     if not can_access("feedback"):
         st.warning("Access restricted.")
     else:
@@ -448,8 +467,8 @@ with tabs[10]:
                 fire("feedback_received", {"user": user, "page": page, "rating": rating})
                 st.success("Thanks!")
 
-# ── TAB 11: Admin ─────────────────────────────────────────────────────────────
-with tabs[11]:
+# ── TAB 12: Admin ─────────────────────────────────────────────────────────────
+with tabs[12]:
     render_admin_panel(user)
 
 # ── Footer ────────────────────────────────────────────────────────────────────

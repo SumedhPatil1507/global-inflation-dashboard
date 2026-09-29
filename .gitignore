@@ -14,3 +14,5 @@ build/
 saved_model.pt
 usage.db
 .python-version
+certs/*.pem
+*.pem
