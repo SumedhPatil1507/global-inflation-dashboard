@@ -316,7 +316,7 @@ with tabs[7]:
     else:
         from modules.forecasting import (run_arima_forecast, run_prophet_forecast,
                                           run_var_forecast, forecast_plot_dataframe,
-                                          var_multi_country_plot, PROPHET_OK, STATSMODELS_OK)
+                                          var_multi_country_plot, PROPHET_OK)
         st.markdown('<p class="sh">Macroeconomic Time-Series Forecasting</p>', unsafe_allow_html=True)
         fc_country = st.selectbox("Country for Single-Series Forecast",
                                   selected_countries or all_countries, key="fc_c")
