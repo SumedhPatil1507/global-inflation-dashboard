@@ -2,19 +2,55 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+try:
+    from fastapi import APIRouter, Depends, HTTPException
+    from pydantic import BaseModel, Field
+    from backend.core.security import require_analyst, require_scope
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
+    APIRouter = Depends = HTTPException = None
+    require_analyst = require_scope = None
 
-from backend.core.security import require_analyst, require_scope
+    # Create stub classes for when FastAPI is not available
+    class BaseModel:
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+        def dict(self):
+            return self.__dict__
+        def model_dump(self):
+            return self.__dict__
 
-router = APIRouter(prefix="/api/quant", tags=["quant"])
+    class Field:
+        def __init__(self, default=None, default_factory=None, **kwargs):
+            self.default = default
+            self.default_factory = default_factory
+            self.kwargs = kwargs
+        
+        def __call__(self):
+            if self.default_factory is not None:
+                return self.default_factory()
+            return self.default
+
+if FASTAPI_AVAILABLE:
+    router = APIRouter(prefix="/api/quant", tags=["quant"])
+else:
+    router = None
 
 
 class BacktestRequest(BaseModel):
-    tickers: List[str] = Field(default_factory=lambda: ["GLD", "SPY", "TIP"])
-    indicators: List[str] = Field(default_factory=lambda: ["inflation_rate", "interest_rate"])
+    tickers: List[str] = None
+    indicators: List[str] = None
     start_date: str = "2020-01-01"
     end_date: str = "2024-12-31"
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.tickers is None:
+            self.tickers = ["GLD", "SPY", "TIP"]
+        if self.indicators is None:
+            self.indicators = ["inflation_rate", "interest_rate"]
 
 
 class BacktestResult(BaseModel):
@@ -24,8 +60,13 @@ class BacktestResult(BaseModel):
     max_drawdown: float
     total_return: float
     annualized_volatility: float
-    ticker_weights: Dict[str, float] = Field(default_factory=dict)
+    ticker_weights: Dict[str, float] = None
     summary: str = ""
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.ticker_weights is None:
+            self.ticker_weights = {}
 
 
 def _calc_metrics(equity: pd.Series) -> Dict[str, float]:
@@ -144,15 +185,29 @@ async def execute_backtest(
         pass  # Fallback to high-fidelity macro market simulation
 
     sim_res = generate_simulated_backtest(tickers, start_date, end_date)
-    return BacktestResult(**sim_res)
+    # Handle both dict and object unpacking
+    if isinstance(sim_res, dict):
+        return BacktestResult(**sim_res)
+    else:
+        return BacktestResult(
+            equity_curve=sim_res.equity_curve,
+            dates=sim_res.dates,
+            sharpe=sim_res.sharpe,
+            max_drawdown=sim_res.max_drawdown,
+            total_return=sim_res.total_return,
+            annualized_volatility=sim_res.annualized_volatility,
+            ticker_weights=sim_res.ticker_weights,
+            summary=sim_res.summary,
+        )
 
 
-@router.post("/backtest", response_model=BacktestResult)
-async def run_backtest(req: BacktestRequest, user: dict = Depends(require_analyst)):
-    """Run quantitative portfolio backtest over macro cycles."""
-    return await execute_backtest(
-        tickers=req.tickers,
-        indicators=req.indicators,
-        start_date=req.start_date,
-        end_date=req.end_date,
-    )
+if FASTAPI_AVAILABLE and router is not None:
+    @router.post("/backtest", response_model=BacktestResult)
+    async def run_backtest(req: BacktestRequest, user: dict = Depends(require_analyst)):
+        """Run quantitative portfolio backtest over macro cycles."""
+        return await execute_backtest(
+            tickers=req.tickers,
+            indicators=req.indicators,
+            start_date=req.start_date,
+            end_date=req.end_date,
+        )

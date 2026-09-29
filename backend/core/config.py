@@ -1,6 +1,21 @@
 import os
-from pydantic_settings import BaseSettings
+try:
+    from pydantic_settings import BaseSettings
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    # Create a simple fallback class
+    class BaseSettings:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+        
+        class Config:
+            env_file = ".env"
+            env_file_encoding = "utf-8"
+
 from functools import lru_cache
+from typing import Any
 
 class Settings(BaseSettings):
     # JWT settings (RS256)
@@ -31,7 +46,7 @@ class Settings(BaseSettings):
 
     # Application environment
     app_env: str = "development"
-    allowed_origins: list[str] = [
+    allowed_origins: Any = [
         "http://localhost:8501",
         "https://global-inflation-dashboard-cmuugxnnh2kqffda2e78app.streamlit.app",
     ]

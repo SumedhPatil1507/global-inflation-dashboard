@@ -243,10 +243,14 @@ with tabs[4]:
                 with c1: st.plotly_chart(actual_vs_predicted_plot(actual, preds), use_container_width=True)
                 with c2: st.plotly_chart(loss_curve_plot(losses), use_container_width=True)
                 if TORCH_OK:
-                    import torch
-                    y_tv = torch.tensor(actual.reshape(-1,1), dtype=torch.float32)
-                    st.plotly_chart(permutation_importance(model_obj, X_tv, y_tv, feat_names),
-                                    use_container_width=True)
+                    try:
+                        import torch
+                        y_tv = torch.tensor(actual.reshape(-1,1), dtype=torch.float32)
+                        st.plotly_chart(permutation_importance(model_obj, X_tv, y_tv, feat_names),
+                                        use_container_width=True)
+                    except (ImportError, OSError):
+                        st.plotly_chart(permutation_importance(model_obj, X_tv, actual, feat_names),
+                                        use_container_width=True)
                 else:
                     st.plotly_chart(permutation_importance(model_obj, X_tv, actual, feat_names),
                                     use_container_width=True)
@@ -429,7 +433,7 @@ with tabs[9]:
         st.plotly_chart(_adv.scatter_3d(df), use_container_width=True)
         c1,c2 = st.columns(2)
         with c1: st.plotly_chart(_adv.contour_density(df), use_container_width=True)
-        with c2: st.image(base64.b64decode(_adv.hexbin_plot(df)), use_container_width=True)
+        with c2: st.plotly_chart(_adv.hexbin_plot(df), use_container_width=True)
         facet_sel = st.multiselect("Countries for Facet", all_countries,
                                    default=(selected_countries or all_countries)[:4], key="facet_sel")
         if facet_sel:

@@ -17,7 +17,7 @@ try:
     import torch.nn as nn
     import torch.optim as optim
     TORCH_OK = True
-except ImportError:
+except (ImportError, OSError):
     TORCH_OK = False
     nn = None  # prevents NameError in type hints
 

@@ -6,11 +6,74 @@ from typing import TypedDict, List, Dict, Any, Optional
 from datetime import datetime
 import numpy as np
 import pandas as pd
-from langgraph.graph import StateGraph, END
+try:
+    from langgraph.graph import StateGraph, END
+    LANGGRAPH_AVAILABLE = True
+except ImportError:
+    LANGGRAPH_AVAILABLE = False
+    StateGraph = END = None
 
 from backend.services.macro_rag import retrieve_macro_reports
-from backend.services.backtester import execute_backtest, generate_simulated_backtest
-from backend.services.data_service import fetch_real_data, fetch_world_bank_data
+try:
+    from backend.services.backtester import execute_backtest, generate_simulated_backtest
+    BACKTESTER_AVAILABLE = True
+except ImportError:
+    BACKTESTER_AVAILABLE = False
+    execute_backtest = None
+    # Define fallback function if backtester is not available
+    def generate_simulated_backtest(tickers, start_date="2020-01-01", end_date="2024-12-31"):
+        import numpy as np
+        import pandas as pd
+        start_dt = pd.to_datetime(start_date)
+        end_dt = pd.to_datetime(end_date)
+        date_range = pd.date_range(start=start_dt, end=end_dt, freq="B")
+        
+        if len(date_range) < 5:
+            date_range = pd.date_range(start="2020-01-01", end="2024-12-31", freq="B")
+        
+        n_days = len(date_range)
+        np.random.seed(42)
+        
+        selected = tickers if tickers else ["GLD", "SPY", "TIP"]
+        equal_weight = 1.0 / len(selected)
+        weights = {t: round(equal_weight, 3) for t in selected}
+        
+        portfolio_returns = np.zeros(n_days)
+        for ticker in selected:
+            mu, sigma = 0.00035, 0.009
+            daily_noise = np.random.normal(mu, sigma, n_days)
+            portfolio_returns += daily_noise * equal_weight
+        
+        portfolio_returns[0] = 0.0
+        cum_returns = np.cumprod(1.0 + portfolio_returns)
+        equity = pd.Series(cum_returns * 10000.0, index=date_range)
+        
+        returns = equity.pct_change().dropna()
+        sharpe = float(returns.mean() / (returns.std() + 1e-9) * np.sqrt(252)) if not returns.empty else 0.0
+        ann_vol = float(returns.std() * np.sqrt(252)) if not returns.empty else 0.0
+        cummax = equity.cummax()
+        drawdown = (cummax - equity) / (cummax + 1e-9)
+        max_dd = float(drawdown.max()) if not drawdown.empty else 0.0
+        total_ret = float(equity.iloc[-1] / equity.iloc[0] - 1.0) if len(equity) > 1 else 0.0
+        
+        return {
+            "equity_curve": [round(val, 2) for val in equity.tolist()],
+            "dates": [d.strftime("%Y-%m-%d") for d in date_range],
+            "sharpe": round(sharpe, 4),
+            "max_drawdown": round(max_dd, 4),
+            "total_return": round(total_ret, 4),
+            "annualized_volatility": round(ann_vol, 4),
+            "ticker_weights": weights,
+            "summary": f"Backtested portfolio {', '.join(selected)} from {start_date} to {end_date}.",
+        }
+
+try:
+    from backend.services.data_service import fetch_real_data, fetch_world_bank_data
+    DATA_SERVICE_AVAILABLE = True
+except ImportError:
+    DATA_SERVICE_AVAILABLE = False
+    fetch_real_data = None
+    fetch_world_bank_data = None
 
 
 class MacroAgentState(TypedDict):
@@ -92,15 +155,15 @@ def macro_data_node(state: MacroAgentState) -> Dict[str, Any]:
 
     # 1. Fetch real or fallback data
     df = pd.DataFrame()
-    if country == "USA":
-        df = fetch_real_data(start_y, end_y)
-    else:
-        wb_df = fetch_world_bank_data(start_y, end_y)
-        if not wb_df.empty:
-            df = wb_df[wb_df["country"] == country]
+    if DATA_SERVICE_AVAILABLE:
+        if country == "USA" and fetch_real_data is not None:
+            df = fetch_real_data(start_y, end_y)
+        elif fetch_world_bank_data is not None:
+            wb_df = fetch_world_bank_data(start_y, end_y)
+            if not wb_df.empty:
+                df = wb_df[wb_df["country"] == country]
 
     # Fallback realistic series if external APIs are unreachable or empty
-    if df.empty or "inflation_rate" not in df.columns:
         years = list(range(start_y, end_y + 1))
         if country == "IND":
             inf_rates = [6.2, 5.1, 6.7, 5.4, 4.9]
@@ -175,6 +238,7 @@ def quant_backtest_node(state: MacroAgentState) -> Dict[str, Any]:
     start_date = f"{state.get('start_year', 2020)}-01-01"
     end_date = f"{state.get('end_year', 2024)}-12-31"
 
+    # Use the available backtest function
     sim_res = generate_simulated_backtest(tickers=tickers, start_date=start_date, end_date=end_date)
 
     trace_entry = {
@@ -320,6 +384,9 @@ def synthesis_node(state: MacroAgentState) -> Dict[str, Any]:
 # ── LangGraph Workflow Assembly ───────────────────────────────────────────────
 def build_macro_research_graph():
     """Build and compile the LangGraph Macro Research Agent state graph."""
+    if not LANGGRAPH_AVAILABLE:
+        return None
+
     graph = StateGraph(MacroAgentState)
 
     graph.add_node("planner", planner_node)
@@ -338,7 +405,7 @@ def build_macro_research_graph():
     return graph.compile()
 
 
-# Compiled LangGraph agent runner
+# Compiled LangGraph agent runner (if installed)
 _macro_agent_app = build_macro_research_graph()
 
 
@@ -350,7 +417,7 @@ def run_macro_research(
     include_backtest: bool = True,
     backtest_tickers: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Execute LangGraph Macro Research Agent workflow and return structured results."""
+    """Execute Macro Research Agent workflow and return structured results."""
     initial_state: MacroAgentState = {
         "query": query,
         "country": country,
@@ -367,5 +434,14 @@ def run_macro_research(
         "execution_trace": [],
     }
 
-    final_state = _macro_agent_app.invoke(initial_state)
-    return dict(final_state)
+    if _macro_agent_app is not None:
+        final_state = _macro_agent_app.invoke(initial_state)
+        return dict(final_state)
+
+    # Deterministic sequential execution fallback (for zero-dependency runtime)
+    state = dict(initial_state)
+    for node_fn in (planner_node, macro_data_node, quant_backtest_node, rag_retrieval_node, synthesis_node):
+        update = node_fn(state)
+        if update:
+            state.update(update)
+    return state

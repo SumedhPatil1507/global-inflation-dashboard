@@ -6,7 +6,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![Security](https://img.shields.io/badge/Auth-RS256%20JWT%20%2B%20RBAC-green.svg)](https://jwt.io/)
 
-A production-grade macroeconomic intelligence platform combining an asynchronous **FastAPI** backend, **LangGraph** autonomous research agent, **Dense RAG** knowledge retrieval over central bank publications, **Quantitative Portfolio Backtesting**, and a rich **Streamlit** multi-tab visualization dashboard.
+A production-grade macroeconomic intelligence platform combining an asynchronous **FastAPI** backend, **LangGraph** autonomous research agent, **Dense RAG** knowledge retrieval over central bank publications, **Quantitative Portfolio Backtesting**, and a rich **Streamlit** multi-tab visualization dashboard with **fully interactive Plotly charts** and **Streamlit-ready backend integration**.
 
 ---
 
@@ -23,8 +23,9 @@ Access the interactive live Streamlit dashboard directly in your browser:
                                   ┌──────────────────────────────────────────────┐
                                   │           Streamlit Frontend (UI)           │
                                   │  - 13 Specialized Analytical Tabs           │
-                                  │  - Interactive Plotly Visualizations         │
+                                  │  - Fully Interactive Plotly Visualizations │
                                   │  - LangGraph Macro Agent Interactive Console │
+                                  │  - Streamlit-Ready Backend Integration     │
                                   └──────────────────────┬───────────────────────┘
                                                          │
                                                          │ HTTP REST / RS256 JWT
@@ -34,6 +35,7 @@ Access the interactive live Streamlit dashboard directly in your browser:
                                   │  - RS256 Scoped JWT Auth & RBAC Middleware   │
                                   │  - Immutable Audit Trail (Ledger)            │
                                   │  - CORS & Rate-Limiting Controls             │
+                                  │  - Streamlit-Ready Import Handling           │
                                   └──────┬───────────────┬───────────────┬───────┘
                                          │               │               │
                  ┌───────────────────────┘               │               └───────────────────────┐
@@ -44,6 +46,7 @@ Access the interactive live Streamlit dashboard directly in your browser:
   │  2. Macro Time-Series API    │        │  - Sharpe / Max Drawdown     │        │  - PyTorch NN Inflation Reg  │
   │  3. RAG Central Bank Corpus  │        │  - Equity & Underwater Curves│        │  - Celery Worker / Redis Q   │
   │  4. Research Memo Synthesis  │        │  - Dynamic Asset Allocation  │        │  - TimescaleDB / PostgreSQL  │
+  │  5. World Bank/RBI Reports  │        │  - Streamlit-Ready Backtest  │        │  - Graceful API Fallbacks    │
   └──────────────────────────────┘        └──────────────────────────────┘        └──────────────────────────────┘
 ```
 
@@ -148,6 +151,36 @@ The API and Dashboard employ asymmetric **RS256 JWT** authentication with granul
 | `POST` | `/api/ml/train` | `ml:train` / Analyst | Asynchronous model training task via Celery |
 | `POST` | `/api/ml/predict` | `macro:read` / Viewer | Neural network inflation forecast inference |
 | `GET` | `/health` | Public | System health check & active feature flags |
+
+---
+
+## 🆕 Recent Updates & Enhancements
+
+### ✅ Macro Research Agent (LangGraph + RAG)
+- **Fully implemented** LangGraph-based autonomous multi-step reasoning engine
+- **RAG Knowledge Base** with chunked and embedded World Bank/RBI reports
+- **JWT-scoped access** with `macro:research` scope requirement
+- **Interactive multi-tab interface** with research memorandum synthesis
+- **Quantitative backtesting integration** for inflation-hedge portfolios
+
+### ✅ Streamlit-Ready Backend Integration
+- **Graceful import handling** for FastAPI dependencies in Streamlit environment
+- **Fallback mechanisms** when external APIs are unavailable
+- **Zero-dependency runtime** for macro agent execution
+- **Compatible with both** standalone Streamlit and full FastAPI deployment
+
+### ✅ Fully Interactive Visualizations
+- **All plots converted to Plotly** for full interactivity
+- **3D scatter plots** with zoom, pan, and rotation
+- **Interactive contour density plots** replacing static hexbin
+- **Real-time hover tooltips** and data exploration
+- **Responsive cluster visualizations** with interactive dendrogram alternatives
+
+### ✅ Enhanced Security & Authentication
+- **RS256 JWT-scoped access** for macro research endpoints
+- **Role-based access control** (Admin, Analyst, Viewer)
+- **Automatic RSA key generation** for development environments
+- **Streamlit-compatible security** functions for frontend integration
 
 ---
 

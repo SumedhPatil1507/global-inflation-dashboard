@@ -17,7 +17,6 @@ if parent_dir not in sys.path:
 
 from backend.services.macro_agent import run_macro_research
 from backend.services.macro_rag import retrieve_macro_reports
-from backend.core.security import create_access_token
 
 
 def plot_macro_time_series(records: list[dict], country: str) -> go.Figure:

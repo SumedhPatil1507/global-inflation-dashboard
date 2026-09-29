@@ -8,14 +8,35 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from backend.core.config import get_settings
+try:
+    from fastapi import Depends, HTTPException, status
+    from fastapi.security import OAuth2PasswordBearer
+    from jose import JWTError, jwt
+    from backend.core.config import get_settings
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
+    Depends = HTTPException = status = None
+    OAuth2PasswordBearer = None
+    JWTError = None
+    jwt = None
+    
+    # Create dummy settings for non-FastAPI environment
+    class DummySettings:
+        rsa_private_key_path = "certs/private_key.pem"
+        rsa_public_key_path = "certs/public_key.pem"
+        jwt_algorithm = "RS256"
+        jwt_expire_min = 60
+    
+    _settings = DummySettings()
 
-_settings = get_settings()
-_private_key_path = _settings.rsa_private_key_path
-_public_key_path = _settings.rsa_public_key_path
+if FASTAPI_AVAILABLE:
+    _settings = get_settings()
+    _private_key_path = _settings.rsa_private_key_path
+    _public_key_path = _settings.rsa_public_key_path
+else:
+    _private_key_path = _settings.rsa_private_key_path
+    _public_key_path = _settings.rsa_public_key_path
 
 
 def _ensure_rsa_keys():
@@ -45,17 +66,33 @@ def _ensure_rsa_keys():
                 f.write(pub_pem)
         except Exception as e:
             # Fallback if cryptography fails: raise or log
-            raise RuntimeError(f"Failed to create RSA keypair: {e}")
+            if FASTAPI_AVAILABLE:
+                raise RuntimeError(f"Failed to create RSA keypair: {e}")
+            # For non-FastAPI environment, use dummy keys
+            dummy_key = b"-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC=\n-----END PRIVATE KEY-----"
+            with open(_private_key_path, "wb") as f:
+                f.write(dummy_key)
+            with open(_public_key_path, "wb") as f:
+                f.write(dummy_key)
 
-_ensure_rsa_keys()
-
-with open(_private_key_path, "rb") as f:
-    _PRIVATE_KEY = f.read()
-with open(_public_key_path, "rb") as f:
-    _PUBLIC_KEY = f.read()
+try:
+    _ensure_rsa_keys()
+    with open(_private_key_path, "rb") as f:
+        _PRIVATE_KEY = f.read()
+    with open(_public_key_path, "rb") as f:
+        _PUBLIC_KEY = f.read()
+except Exception as e:
+    # Fallback for Streamlit environment where RSA keys might not be available
+    if FASTAPI_AVAILABLE:
+        raise
+    _PRIVATE_KEY = b"dummy_key"
+    _PUBLIC_KEY = b"dummy_key"
 
 # OAuth2 scheme for bearer token
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+if FASTAPI_AVAILABLE:
+    oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+else:
+    oauth2_scheme = None
 
 # Default scopes for roles
 ROLE_SCOPES = {
@@ -92,6 +129,9 @@ def create_access_token(data: dict) -> str:
     """Create a JWT signed with the RSA private key (RS256).
     ``data`` should contain at least ``sub`` (subject), ``role``, and ``scopes``.
     """
+    if not FASTAPI_AVAILABLE:
+        # Return dummy token for non-FastAPI environment
+        return "dummy_token"
     payload = data.copy()
     role = payload.get("role", "analyst")
     if "scopes" not in payload:
@@ -103,6 +143,9 @@ def create_access_token(data: dict) -> str:
 
 def decode_token(token: str) -> dict:
     """Decode and verify a JWT using the RSA public key."""
+    if not FASTAPI_AVAILABLE:
+        # Return dummy user for non-FastAPI environment
+        return {"username": "demo", "role": "analyst", "scopes": ROLE_SCOPES["analyst"]}
     try:
         return jwt.decode(token, _PUBLIC_KEY, algorithms=[_settings.jwt_algorithm])
     except JWTError:
@@ -111,11 +154,17 @@ def decode_token(token: str) -> dict:
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     """FastAPI dependency that returns the JWT payload as a dict."""
+    if not FASTAPI_AVAILABLE:
+        return {"username": "demo", "role": "analyst", "scopes": ROLE_SCOPES["analyst"]}
     return decode_token(token)
 
 
 def require_scope(required_scope: str):
     """Dependency factory to verify that token contains a specific JWT scope."""
+    if not FASTAPI_AVAILABLE:
+        # Return dummy function for non-FastAPI environment
+        return lambda: {"username": "demo", "role": "analyst", "scopes": ROLE_SCOPES["analyst"]}
+    
     async def _scope_checker(user: dict = Depends(get_current_user)) -> dict:
         user_scopes = user.get("scopes", [])
         user_role = user.get("role", "")
@@ -133,6 +182,8 @@ def require_scope(required_scope: str):
 
 async def require_macro_research(user: dict = Depends(get_current_user)) -> dict:
     """Enforce 'macro:research' scope or analyst/admin role."""
+    if not FASTAPI_AVAILABLE:
+        return {"username": "demo", "role": "analyst", "scopes": ROLE_SCOPES["analyst"]}
     scopes = user.get("scopes", [])
     role = user.get("role", "")
     if role in ("admin", "analyst") or "macro:research" in scopes:
@@ -141,12 +192,16 @@ async def require_macro_research(user: dict = Depends(get_current_user)) -> dict
 
 
 async def require_analyst(user: dict = Depends(get_current_user)) -> dict:
+    if not FASTAPI_AVAILABLE:
+        return {"username": "demo", "role": "analyst", "scopes": ROLE_SCOPES["analyst"]}
     if user.get("role") not in ("analyst", "admin"):
         raise HTTPException(status_code=403, detail="Analyst or Admin role required")
     return user
 
 
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if not FASTAPI_AVAILABLE:
+        return {"username": "admin", "role": "admin", "scopes": ROLE_SCOPES["admin"]}
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin role required")
     return user

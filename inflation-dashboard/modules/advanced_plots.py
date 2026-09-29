@@ -4,11 +4,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import io
-import base64
 
 
 def _has(df: pd.DataFrame, *cols) -> bool:
@@ -55,27 +50,30 @@ def contour_density(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def hexbin_plot(df: pd.DataFrame) -> str:
-    """Returns base64 PNG — Plotly has no native hexbin."""
-    fig, ax = plt.subplots(figsize=(9, 6))
-    if _has(df, "money_supply_m2", "inflation_rate"):
-        x = df["money_supply_m2"].fillna(0).values
-        y = df["inflation_rate"].fillna(0).values
-        hb = ax.hexbin(x, y, gridsize=40, cmap="plasma", mincnt=1)
-        fig.colorbar(hb, ax=ax, label="Count")
-        ax.set_xlabel("Money Supply M2")
-        ax.set_ylabel("Inflation Rate (%)")
-    else:
-        ax.text(0.5, 0.5, "Hexbin unavailable — missing columns",
-                ha="center", va="center", transform=ax.transAxes)
-        ax.axis("off")
-    ax.set_title("Hexbin Density: Money Supply M2 vs Inflation Rate")
-    plt.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=120)
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
+def hexbin_plot(df: pd.DataFrame) -> go.Figure:
+    """Returns interactive Plotly 2D histogram as hexbin alternative."""
+    if not _has(df, "money_supply_m2", "inflation_rate"):
+        fig = go.Figure()
+        fig.update_layout(title="Hexbin unavailable — missing columns", height=300)
+        return fig
+    
+    sub = df[["money_supply_m2", "inflation_rate"]].dropna()
+    fig = go.Figure(go.Histogram2dContour(
+        x=sub["money_supply_m2"],
+        y=sub["inflation_rate"],
+        colorscale="Plasma",
+        contours_coloring="fill",
+        line_width=0,
+        ncontours=40,
+    ))
+    fig.update_traces(contours_showlabels=True)
+    fig.update_layout(
+        title="Density Plot: Money Supply M2 vs Inflation Rate",
+        xaxis_title="Money Supply M2",
+        yaxis_title="Inflation Rate (%)",
+        height=500,
+    )
+    return fig
 
 
 def facet_inflation(df: pd.DataFrame, countries: list) -> go.Figure:
