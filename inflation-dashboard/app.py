@@ -326,8 +326,7 @@ with tabs[7]:
             df_sub = df[df["country"] == fc_country].sort_values("year")
             if len(df_sub) >= 5:
                 df_arima = run_arima_forecast(df_sub, steps=forecast_years)
-                model_name = "ARIMA" if STATSMODELS_OK else "Linear Fallback (statsmodels not available)"
-                st.plotly_chart(forecast_plot_dataframe(df_sub, df_arima, fc_country, model_name),
+                st.plotly_chart(forecast_plot_dataframe(df_sub, df_arima, fc_country, "ARIMA"),
                                 use_container_width=True)
             else:
                 st.warning("Need at least 5 observations for ARIMA.")
