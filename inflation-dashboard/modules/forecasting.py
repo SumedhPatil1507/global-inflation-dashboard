@@ -15,6 +15,16 @@ try:
 except (ImportError, OSError):
     TORCH_OK = False
 
+try:
+    from statsmodels.tsa.arima.model import ARIMA
+    from statsmodels.tsa.statespace.var_max import VARMAX
+    import prophet
+    PROPHET_OK = True
+    STATSMODELS_OK = True
+except ImportError:
+    PROPHET_OK = False
+    STATSMODELS_OK = False
+
 
 def _build_lstm():
     """Build LSTM model — only called when TORCH_OK is True."""
@@ -114,6 +124,55 @@ def forecast_plot(series, hist_years, future, future_years, country: str) -> go.
     fig.update_layout(title=f"Inflation Forecast — {country}",
                       xaxis_title="Year", yaxis_title="Inflation Rate (%)",
                       height=450, hovermode="x unified")
+    return fig
+
+
+def forecast_plot_dataframe(hist_df: pd.DataFrame, forecast_df: pd.DataFrame, 
+                           country: str, model_name: str) -> go.Figure:
+    """Create forecast plot using DataFrame format (for ARIMA/Prophet)."""
+    fig = go.Figure()
+    
+    # Historical data
+    fig.add_trace(go.Scatter(
+        x=hist_df["year"],
+        y=hist_df["inflation_rate"],
+        mode="lines+markers",
+        name="Historical",
+        line=dict(color="steelblue", width=2),
+    ))
+    
+    # Forecast data
+    fig.add_trace(go.Scatter(
+        x=forecast_df["year"],
+        y=forecast_df["inflation_rate"],
+        mode="lines+markers",
+        name=f"Forecast ({model_name})",
+        line=dict(color="orange", dash="dash", width=2),
+    ))
+    
+    # Add confidence band if we have historical data
+    if len(hist_df) > 1:
+        hist_std = hist_df["inflation_rate"].std()
+        forecast_std = hist_std  # Assume similar volatility
+        upper = (forecast_df["inflation_rate"] + forecast_std).tolist()
+        lower = (forecast_df["inflation_rate"] - forecast_std).tolist()
+        
+        fig.add_trace(go.Scatter(
+            x=forecast_df["year"].tolist() + list(reversed(forecast_df["year"].tolist())),
+            y=upper + list(reversed(lower)),
+            fill="toself",
+            fillcolor="rgba(255,165,0,0.15)",
+            line=dict(color="rgba(0,0,0,0)"),
+            name="Confidence Band (±1σ)",
+        ))
+    
+    fig.update_layout(
+        title=f"Inflation Forecast — {country} ({model_name})",
+        xaxis_title="Year",
+        yaxis_title="Inflation Rate (%)",
+        height=450,
+        hovermode="x unified",
+    )
     return fig
 
 
@@ -280,5 +339,241 @@ def monte_carlo_plot(base_return: float, volatility: float,
               f"P5: ${p5:.2f}  Median: ${np.median(final_vals):.2f}  P95: ${p95:.2f}",
         xaxis_title="Year", yaxis_title="Portfolio Value ($1 invested)",
         height=450,
+    )
+    return fig
+
+
+# ── ARIMA Forecasting ────────────────────────────────────────────────────────
+def run_arima_forecast(df: pd.DataFrame, steps: int = 5) -> pd.DataFrame:
+    """Run ARIMA forecast for inflation rate."""
+    sub = df.sort_values("year")
+    series = sub["inflation_rate"].dropna()
+    
+    if len(series) < 5 or not STATSMODELS_OK:
+        # Fallback to linear extrapolation
+        last_year = int(sub["year"].max())
+        trend = np.polyfit(range(len(series)), series, 1)
+        future_years = list(range(last_year + 1, last_year + steps + 1))
+        future_values = [np.polyval(trend, len(series) + i) for i in range(steps)]
+        
+        forecast_df = pd.DataFrame({
+            "year": future_years,
+            "inflation_rate": future_values,
+            "forecast_type": "Linear Fallback"
+        })
+        return forecast_df
+    
+    try:
+        model = ARIMA(series, order=(1, 1, 1))
+        model_fit = model.fit()
+        forecast = model_fit.forecast(steps=steps)
+        
+        last_year = int(sub["year"].max())
+        future_years = list(range(last_year + 1, last_year + steps + 1))
+        
+        forecast_df = pd.DataFrame({
+            "year": future_years,
+            "inflation_rate": forecast.tolist(),
+            "forecast_type": "ARIMA"
+        })
+        return forecast_df
+    except Exception:
+        # Fallback to linear extrapolation
+        last_year = int(sub["year"].max())
+        trend = np.polyfit(range(len(series)), series, 1)
+        future_years = list(range(last_year + 1, last_year + steps + 1))
+        future_values = [np.polyval(trend, len(series) + i) for i in range(steps)]
+        
+        forecast_df = pd.DataFrame({
+            "year": future_years,
+            "inflation_rate": future_values,
+            "forecast_type": "Linear Fallback"
+        })
+        return forecast_df
+
+
+# ── Prophet Forecasting ─────────────────────────────────────────────────────
+def run_prophet_forecast(df: pd.DataFrame, steps: int = 5) -> pd.DataFrame:
+    """Run Prophet forecast for inflation rate."""
+    sub = df.sort_values("year")
+    series = sub[["year", "inflation_rate"]].dropna()
+    series.columns = ["ds", "y"]
+    
+    if len(series) < 5:
+        # Fallback to linear extrapolation
+        last_year = int(sub["year"].max())
+        trend = np.polyfit(range(len(series)), sub["inflation_rate"].dropna(), 1)
+        future_years = list(range(last_year + 1, last_year + steps + 1))
+        future_values = [np.polyval(trend, len(series) + i) for i in range(steps)]
+        
+        forecast_df = pd.DataFrame({
+            "year": future_years,
+            "inflation_rate": future_values,
+            "forecast_type": "Linear Fallback"
+        })
+        return forecast_df
+    
+    if not PROPHET_OK:
+        # Fallback to linear extrapolation
+        last_year = int(sub["year"].max())
+        trend = np.polyfit(range(len(series)), sub["inflation_rate"].dropna(), 1)
+        future_years = list(range(last_year + 1, last_year + steps + 1))
+        future_values = [np.polyval(trend, len(series) + i) for i in range(steps)]
+        
+        forecast_df = pd.DataFrame({
+            "year": future_years,
+            "inflation_rate": future_values,
+            "forecast_type": "Poly-Trend (Prophet fallback)"
+        })
+        return forecast_df
+    
+    try:
+        from prophet import Prophet
+        model = Prophet()
+        model.fit(series)
+        
+        future = model.make_future_dataframe(periods=steps, freq='Y')
+        forecast = model.predict(future)
+        
+        forecast_df = forecast[forecast['ds'].dt.year > sub['year'].max()].copy()
+        forecast_df['year'] = forecast_df['ds'].dt.year
+        forecast_df['inflation_rate'] = forecast_df['yhat']
+        forecast_df['forecast_type'] = 'Prophet'
+        
+        return forecast_df[['year', 'inflation_rate', 'forecast_type']]
+    except Exception:
+        # Fallback to linear extrapolation
+        last_year = int(sub["year"].max())
+        trend = np.polyfit(range(len(series)), sub["inflation_rate"].dropna(), 1)
+        future_years = list(range(last_year + 1, last_year + steps + 1))
+        future_values = [np.polyval(trend, len(series) + i) for i in range(steps)]
+        
+        forecast_df = pd.DataFrame({
+            "year": future_years,
+            "inflation_rate": future_values,
+            "forecast_type": "Poly-Trend (Prophet fallback)"
+        })
+        return forecast_df
+
+
+# ── VAR Forecasting ─────────────────────────────────────────────────────────
+def run_var_forecast(df: pd.DataFrame, countries: list, steps: int = 5) -> tuple:
+    """Run VAR forecast for multiple countries."""
+    if len(countries) < 2:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    # Prepare data for VAR
+    var_data = []
+    for country in countries:
+        country_data = df[df["country"] == country].sort_values("year")
+        if len(country_data) >= 3:
+            var_data.append(country_data[["year", "country", "inflation_rate"]])
+    
+    if len(var_data) < 2:
+        return pd.DataFrame(), pd.DataFrame()
+    
+    hist_df = pd.concat(var_data)
+    
+    # Create pivot table for VAR
+    pivot_df = hist_df.pivot(index="year", columns="country", values="inflation_rate")
+    pivot_df = pivot_df.dropna()
+    
+    if len(pivot_df) < 3 or not STATSMODELS_OK:
+        # Fallback to individual linear forecasts
+        forecast_data = []
+        last_year = hist_df["year"].max()
+        future_years = list(range(int(last_year) + 1, int(last_year) + steps + 1))
+        
+        for country in countries:
+            country_data = hist_df[hist_df["country"] == country].sort_values("year")
+            if len(country_data) >= 2:
+                series = country_data["inflation_rate"].values
+                trend = np.polyfit(range(len(series)), series, 1)
+                for i, year in enumerate(future_years):
+                    forecast_data.append({
+                        "year": year,
+                        "country": country,
+                        "inflation_rate": np.polyval(trend, len(series) + i)
+                    })
+        
+        forecast_df = pd.DataFrame(forecast_data)
+        return hist_df, forecast_df
+    
+    try:
+        from statsmodels.tsa.api import VAR
+        model = VAR(pivot_df)
+        results = model.fit(maxlags=min(2, len(pivot_df) - 1))
+        forecast = results.forecast(y=pivot_df.values[-results.k_ar:], steps=steps)
+        
+        last_year = pivot_df.index.max()
+        future_years = list(range(int(last_year) + 1, int(last_year) + steps + 1))
+        
+        forecast_data = []
+        for i, year in enumerate(future_years):
+            for j, country in enumerate(countries):
+                if j < forecast.shape[1]:
+                    forecast_data.append({
+                        "year": year,
+                        "country": country,
+                        "inflation_rate": forecast[i, j]
+                    })
+        
+        forecast_df = pd.DataFrame(forecast_data)
+        return hist_df, forecast_df
+    except Exception:
+        # Fallback to individual linear forecasts
+        forecast_data = []
+        last_year = hist_df["year"].max()
+        future_years = list(range(int(last_year) + 1, int(last_year) + steps + 1))
+        
+        for country in countries:
+            country_data = hist_df[hist_df["country"] == country].sort_values("year")
+            if len(country_data) >= 2:
+                series = country_data["inflation_rate"].values
+                trend = np.polyfit(range(len(series)), series, 1)
+                for i, year in enumerate(future_years):
+                    forecast_data.append({
+                        "year": year,
+                        "country": country,
+                        "inflation_rate": np.polyval(trend, len(series) + i)
+                    })
+        
+        forecast_df = pd.DataFrame(forecast_data)
+        return hist_df, forecast_df
+
+
+def var_multi_country_plot(hist_df: pd.DataFrame, forecast_df: pd.DataFrame, 
+                           countries: list) -> go.Figure:
+    """Create VAR multi-country forecast plot."""
+    fig = go.Figure()
+    
+    for country in countries:
+        # Historical data
+        country_hist = hist_df[hist_df["country"] == country].sort_values("year")
+        fig.add_trace(go.Scatter(
+            x=country_hist["year"],
+            y=country_hist["inflation_rate"],
+            mode="lines+markers",
+            name=f"{country} (Historical)",
+            line=dict(width=2),
+        ))
+        
+        # Forecast data
+        if not forecast_df.empty:
+            country_fc = forecast_df[forecast_df["country"] == country].sort_values("year")
+            fig.add_trace(go.Scatter(
+                x=country_fc["year"],
+                y=country_fc["inflation_rate"],
+                mode="lines+markers",
+                name=f"{country} (Forecast)",
+                line=dict(dash="dash", width=2),
+            ))
+    
+    fig.update_layout(
+        title="VAR Multi-Country Inflation Forecast",
+        xaxis_title="Year",
+        yaxis_title="Inflation Rate (%)",
+        height=500,
+        hovermode="x unified",
     )
     return fig

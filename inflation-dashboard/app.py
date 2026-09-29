@@ -315,8 +315,8 @@ with tabs[7]:
         st.warning("Upgrade to Analyst or Admin.")
     else:
         from modules.forecasting import (run_arima_forecast, run_prophet_forecast,
-                                          run_var_forecast, forecast_plot,
-                                          var_multi_country_plot, PROPHET_OK)
+                                          run_var_forecast, forecast_plot_dataframe,
+                                          var_multi_country_plot, PROPHET_OK, STATSMODELS_OK)
         st.markdown('<p class="sh">Macroeconomic Time-Series Forecasting</p>', unsafe_allow_html=True)
         fc_country = st.selectbox("Country for Single-Series Forecast",
                                   selected_countries or all_countries, key="fc_c")
@@ -326,7 +326,8 @@ with tabs[7]:
             df_sub = df[df["country"] == fc_country].sort_values("year")
             if len(df_sub) >= 5:
                 df_arima = run_arima_forecast(df_sub, steps=forecast_years)
-                st.plotly_chart(forecast_plot(df_sub, df_arima, f"ARIMA — {fc_country}"),
+                model_name = "ARIMA" if STATSMODELS_OK else "Linear Fallback (statsmodels not available)"
+                st.plotly_chart(forecast_plot_dataframe(df_sub, df_arima, fc_country, model_name),
                                 use_container_width=True)
             else:
                 st.warning("Need at least 5 observations for ARIMA.")
@@ -336,7 +337,7 @@ with tabs[7]:
             if len(df_sub) >= 5:
                 df_prophet = run_prophet_forecast(df_sub, steps=forecast_years)
                 tag = "Prophet" if PROPHET_OK else "Poly-Trend (Prophet fallback)"
-                st.plotly_chart(forecast_plot(df_sub, df_prophet, f"{tag} — {fc_country}"),
+                st.plotly_chart(forecast_plot_dataframe(df_sub, df_prophet, fc_country, tag),
                                 use_container_width=True)
             else:
                 st.warning("Need at least 5 observations.")
@@ -360,7 +361,8 @@ with tabs[8]:
         st.warning("Upgrade to Analyst or Admin.")
     else:
         from modules.forecasting import (run_stress_test, stress_test_plot,
-                                          portfolio_bar, SCENARIOS, ASSETS)
+                                          portfolio_bar, SCENARIOS, ASSETS, cumulative_wealth_plot,
+                                          sharpe_table, monte_carlo_plot)
         st.markdown('<p class="sh">Portfolio Stress Tester — Macro Scenario Simulator</p>',
                     unsafe_allow_html=True)
         st.caption("Simulates real asset returns under inflation/unemployment shocks over 5–10 years.")
@@ -394,8 +396,6 @@ with tabs[8]:
             st.plotly_chart(stress_test_plot(df_stress, scenario), use_container_width=True)
             st.plotly_chart(portfolio_bar(df_stress), use_container_width=True)
 
-            from modules.forecasting import (cumulative_wealth_plot, sharpe_table,
-                                              monte_carlo_plot)
             st.markdown('<p class="sh">Cumulative Wealth ($1 Invested)</p>',
                         unsafe_allow_html=True)
             st.plotly_chart(cumulative_wealth_plot(df_stress, scenario), use_container_width=True)
