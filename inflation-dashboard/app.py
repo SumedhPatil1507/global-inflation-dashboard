@@ -277,11 +277,12 @@ with tabs[5]:
         ae_pct = st.slider("Anomaly Percentile", 80, 99, 95, key="ae_pct")
         if st.button("🔍 Run Autoencoder", key="ae_btn"):
             with st.spinner("Training Autoencoder…"):
-                df_ae, anom_ae = _anom.autoencoder_anomalies(df, contamination=1-ae_pct/100)
+                df_ae, ae_threshold = _anom.autoencoder_anomalies(df, percentile=ae_pct)
             if df_ae is not None:
-                st.plotly_chart(_anom.autoencoder_loss_plot(df_ae, anom_ae), use_container_width=True)
-                st.dataframe(anom_ae[["country","year","inflation_rate","reconstruction_error"]],
-                             use_container_width=True)
+                anom_ae = df_ae[df_ae["is_anomaly"]] if "is_anomaly" in df_ae.columns else df_ae
+                st.plotly_chart(_anom.autoencoder_plot(df_ae, ae_threshold), use_container_width=True)
+                disp_cols = [c for c in ["country", "year", "inflation_rate", "recon_error"] if c in anom_ae.columns]
+                st.dataframe(anom_ae[disp_cols] if disp_cols else anom_ae, use_container_width=True)
                 log_action(user, "anomaly_autoencoder", f"found={len(anom_ae)}", rows=len(df))
         log_action(user, "anomaly_view", rows=len(df))
 

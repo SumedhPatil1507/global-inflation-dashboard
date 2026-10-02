@@ -176,6 +176,11 @@ The API and Dashboard employ asymmetric **RS256 JWT** authentication with granul
 - **Real-time hover tooltips** and data exploration
 - **Responsive cluster visualizations** with interactive dendrogram alternatives
 
+### ✅ Robust Anomaly Detection & Model Fallbacks
+- **Autoencoder & Z-Score anomaly detectors** with dynamic percentile and contamination thresholding
+- **Zero-failure fallback** on CPU and environments without PyTorch (automatic Z-score reconstruction error proxy)
+- **Defensive column handling** and Plotly chart rendering for standalone and cloud deployments
+
 ### ✅ Enhanced Security & Authentication
 - **RS256 JWT-scoped access** for macro research endpoints
 - **Role-based access control** (Admin, Analyst, Viewer)
