@@ -17,6 +17,8 @@ supabase==2.3.4
 python-dotenv==1.0.1
 torch==2.2.0
 langgraph>=0.0.30
+feast[redis]==0.40.1
+aiokafka==0.11.0
 guardrails-ai>=0.8.0,<0.12.0
 opentelemetry-sdk>=1.24.0,<2.0.0
 opentelemetry-exporter-otlp-proto-http>=1.24.0,<2.0.0
