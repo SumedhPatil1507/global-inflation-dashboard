@@ -364,20 +364,57 @@ with tabs[7]:
             try:
                 daily_input = pd.read_csv(daily_file)
                 cpi_input = pd.read_csv(cpi_file)
-                daily_input["date"] = pd.to_datetime(daily_input["date"], utc=True)
-                cpi_input["period"] = cpi_input["period"].astype(str)
-                cpi_input["release_date"] = pd.to_datetime(cpi_input["release_date"], utc=True)
+                required_daily = {"date", "commodity_price", "bond_yield"}
+                required_cpi = {"period", "cpi", "release_date"}
+                missing_daily = sorted(required_daily.difference(daily_input.columns))
+                missing_cpi = sorted(required_cpi.difference(cpi_input.columns))
+                if missing_daily or missing_cpi:
+                    raise ValueError(
+                        f"Missing daily columns: {missing_daily or 'none'}; "
+                        f"missing CPI columns: {missing_cpi or 'none'}"
+                    )
+
+                daily_input["date"] = pd.to_datetime(daily_input["date"], utc=True, errors="coerce")
+                for column in daily_input.columns.difference(["date"]):
+                    daily_input[column] = pd.to_numeric(daily_input[column], errors="coerce")
+                daily_input = (daily_input.dropna(subset=["date"])
+                               .drop_duplicates(subset=["date"], keep="last")
+                               .sort_values("date"))
                 daily_values = daily_input.set_index("date").select_dtypes(include=[np.number])
-                cpi_values = cpi_input.set_index("period")["cpi"].astype(float)
-                release_values = cpi_input.set_index("period")["release_date"]
+                daily_values = daily_values.dropna(how="all")
+                if daily_values.empty:
+                    raise ValueError("The daily file contains no valid numeric market observations.")
+
+                cpi_input["period"] = pd.PeriodIndex(cpi_input["period"].astype(str), freq="M").astype(str)
+                cpi_input["cpi"] = pd.to_numeric(cpi_input["cpi"], errors="coerce")
+                cpi_input["release_date"] = pd.to_datetime(
+                    cpi_input["release_date"], utc=True, errors="coerce"
+                )
+                cpi_input = (cpi_input.dropna(subset=["cpi", "release_date"])
+                             .drop_duplicates(subset=["period"], keep="last")
+                             .sort_values("period"))
+                if len(cpi_input) < 3:
+                    raise ValueError("Provide at least three valid monthly CPI releases.")
+
                 latest_as_of = daily_values.index.max()
-                target_period = (pd.Period(cpi_values.index[-1], freq="M") + 1).strftime("%Y-%m")
-                as_of_date = st.date_input("Market data available through (exclusive cutoff)", value=latest_as_of.date(), key="midas_asof")
+                as_of_date = st.date_input(
+                    "Include market data through (inclusive date)",
+                    value=latest_as_of.date(), max_value=latest_as_of.date(), key="midas_asof"
+                )
                 if st.button("Run MIDAS nowcast", type="primary", key="run_midas"):
                     from backend.models.midas_nowcast import MIDASNowcaster
+                    # Keep the fit point-in-time safe: CPI releases published after
+                    # this cutoff cannot inform the historical nowcast.
+                    as_of_cutoff = pd.Timestamp(as_of_date, tz="UTC") + pd.Timedelta(days=1)
+                    available_cpi = cpi_input[cpi_input["release_date"] < as_of_cutoff]
+                    if len(available_cpi) < 3:
+                        raise ValueError("The selected date has fewer than three released CPI observations.")
+                    cpi_values = available_cpi.set_index("period")["cpi"]
+                    release_values = available_cpi.set_index("period")["release_date"]
+                    target_period = (pd.Period(cpi_values.index[-1], freq="M") + 1).strftime("%Y-%m")
                     model = MIDASNowcaster().fit(daily_values, cpi_values, release_values)
                     result = model.nowcast(daily_values, target_period=target_period,
-                                           as_of=pd.Timestamp(as_of_date, tz="UTC") + pd.Timedelta(days=1))
+                                           as_of=as_of_cutoff)
                     m1, m2, m3 = st.columns(3)
                     m1.metric(f"CPI nowcast · {target_period}", f"{result.nowcast:.2f}")
                     m2.metric("Training releases", result.training_observations)
@@ -389,7 +426,7 @@ with tabs[7]:
                     fig.update_layout(title="Release-time-safe monthly CPI nowcast", xaxis_title="Reference month", yaxis_title="CPI", hovermode="x unified", template="plotly_dark", height=420)
                     st.plotly_chart(fig, use_container_width=True)
                     st.json({"as_of": result.as_of, "weighted_market_predictors": result.predictors})
-            except (KeyError, ValueError, TypeError) as exc:
+            except (KeyError, ValueError, TypeError, pd.errors.ParserError) as exc:
                 st.error(f"Could not prepare MIDAS inputs: {exc}. Check the required column names and dates.")
         log_action(user, "forecasting_view", f"country={fc_country}", rows=len(df))
 
