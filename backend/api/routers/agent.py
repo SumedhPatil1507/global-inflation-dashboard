@@ -27,6 +27,7 @@ class ResearchResponse(BaseModel):
     time_series_data: Dict[str, Any]
     backtest_result: Optional[Dict[str, Any]] = None
     execution_trace: List[Dict[str, Any]]
+    validation: Dict[str, Any] = Field(default_factory=dict)
 
 
 @router.post("/research", response_model=ResearchResponse)
@@ -62,6 +63,7 @@ async def execute_macro_research(
             time_series_data=result.get("time_series_data", {}),
             backtest_result=result.get("backtest_result"),
             execution_trace=result.get("execution_trace", []),
+            validation=result.get("validation", {}),
         )
     except Exception as e:
         raise HTTPException(

@@ -113,6 +113,8 @@ streamlit run inflation-dashboard/app.py
 ```
 The application will launch at `http://localhost:8501`.
 
+The repository-root `requirements.txt` includes the dashboard dependency set and is used by Streamlit Community Cloud. To deploy, connect this GitHub repository in Community Cloud, select `main` as the branch, and set the app file to `inflation-dashboard/app.py`. Add any required secrets (for example, live data or Supabase credentials) in the app's **Settings → Secrets** panel. The dashboard remains usable in synthetic demo mode without external data credentials.
+
 ### 4. (Optional) Run the FastAPI Backend Server
 ```bash
 uvicorn backend.main:app --reload --port 8000
@@ -151,6 +153,30 @@ The API and Dashboard employ asymmetric **RS256 JWT** authentication with granul
 | `POST` | `/api/ml/train` | `ml:train` / Analyst | Asynchronous model training task via Celery |
 | `POST` | `/api/ml/predict` | `macro:read` / Viewer | Neural network inflation forecast inference |
 | `GET` | `/health` | Public | System health check & active feature flags |
+
+## Macro Agent Guardrails, Tracing & Evaluation
+
+Research memorandums now pass through a local Guardrails AI validator before they are returned. The validator checks that cited and statutory/section references occur in retrieved source material, and blocks the entire memorandum if a forward-looking policy-rate claim is not directly supported by retrieved evidence. Failed validation returns a safe withheld notice with issue details in the API `validation` field; raw invalid text is not delivered.
+
+The agent emits OpenTelemetry spans for the top-level run, each LangGraph state transition, RAG retrieval, quantitative backtest execution, and memorandum validation. Install from `backend/requirements.txt` (also listed in the dashboard requirements for its in-process agent UI). Configure an OTLP collector with standard OpenTelemetry variables, for example:
+
+```powershell
+$env:OTEL_SERVICE_NAME = "global-inflation-dashboard"
+$env:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "http://localhost:4318/v1/traces"
+uvicorn backend.main:app --reload --port 8000
+```
+
+When no endpoint is configured, spans are still created by the SDK but are not exported. Set `OTEL_TRACES_EXPORTER=console` for local span inspection.
+
+The offline audit runner evaluates **50 fixed macro scenarios** against the production retriever and memorandum synthesizer and computes RAGAS Faithfulness, Context Precision, and Answer Relevancy. RAGAS requires a judge LLM and embeddings API key; install its separate dependencies and provide `OPENAI_API_KEY`:
+
+```powershell
+pip install -r eval/requirements.txt
+$env:OPENAI_API_KEY = "..."
+python eval/ragas_macro_eval.py
+```
+
+The script writes a timestamped JSON audit under `eval/reports/`. Select models with `RAGAS_LLM_MODEL` and `RAGAS_EMBEDDING_MODEL`, control request concurrency with `RAGAS_MAX_CONCURRENCY`, or set `--output path/to/report.json`.
 
 ---
 

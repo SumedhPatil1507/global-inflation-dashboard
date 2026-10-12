@@ -321,6 +321,15 @@ def render_macro_research_agent(user: str, role: str):
 
         # TAB 1: Synthesis & Citations
         with v_tabs[0]:
+            validation = res.get("validation", {})
+            if validation.get("passed"):
+                st.success(f"Guardrails passed · {validation.get('source_count', 0)} retrieved sources checked")
+            else:
+                st.error("This memorandum was withheld because Guardrails could not verify its citations or rate projections.")
+                if validation.get("issues"):
+                    with st.expander("Validation audit details"):
+                        for issue in validation["issues"]:
+                            st.write(f"- {issue}")
             st.markdown(res.get("synthesis", "No synthesis generated."))
             st.markdown("---")
             # Export Buttons

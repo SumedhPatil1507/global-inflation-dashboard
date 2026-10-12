@@ -4,6 +4,7 @@ Integrates Macro Data API, Quant Backtest Engine, and World Bank/RBI RAG Retriev
 """
 from typing import TypedDict, List, Dict, Any, Optional
 from datetime import datetime
+from backend.core.telemetry import start_span
 import numpy as np
 import pandas as pd
 try:
@@ -90,6 +91,7 @@ class MacroAgentState(TypedDict):
     synthesis: str
     citations: List[Dict[str, str]]
     execution_trace: List[Dict[str, Any]]
+    validation: Dict[str, Any]
 
 
 # ── Node 1: Planner ───────────────────────────────────────────────────────────
@@ -213,6 +215,7 @@ def macro_data_node(state: MacroAgentState) -> Dict[str, Any]:
         "policy_rate": rate_latest,
         "real_interest_rate": real_rate,
         "gdp_growth": latest_row.get("gdp_growth", 0.0),
+        "data_source": latest_row.get("data_source", "Macro data source unavailable"),
         "data_points": records,
     }
 
@@ -238,8 +241,10 @@ def quant_backtest_node(state: MacroAgentState) -> Dict[str, Any]:
     start_date = f"{state.get('start_year', 2020)}-01-01"
     end_date = f"{state.get('end_year', 2024)}-12-31"
 
-    # Use the available backtest function
-    sim_res = generate_simulated_backtest(tickers=tickers, start_date=start_date, end_date=end_date)
+    # Run the portfolio tool under a dedicated child span.
+    with start_span("macro_agent.tool.quant_backtest", tool="simulated_portfolio_backtest",
+                    asset_count=len(tickers), include_backtest=True):
+        sim_res = generate_simulated_backtest(tickers=tickers, start_date=start_date, end_date=end_date)
 
     trace_entry = {
         "step": "quant_backtest",
@@ -323,11 +328,12 @@ def synthesis_node(state: MacroAgentState) -> Dict[str, Any]:
     )
 
     paragraphs.append("#### 2. Key Micro & Macro Drivers (Empirical & Structural)")
+    citation_note = f" *(Cited: {rag_docs[0]['citation']})*" if rag_docs else ""
     if country == "IND":
         paragraphs.append(
             "- **Food & Vegetable Spikes:** Food accounts for ~46% of the Indian CPI basket. Recurrent climate anomalies, "
             "unseasonal rainfall, and localized supply disruptions in perishables (tomatoes, onions, pulses) created sharp headline volatility "
-            f"even as core inflation fell to multi-year lows. *(Cited: {rag_docs[0]['citation'] if rag_docs else 'RBI Monetary Policy Report'})*\n"
+            f"even as core inflation fell to multi-year lows.{citation_note}\n"
             "- **Monetary Policy Transmission:** The cumulative 250 bps policy rate hikes effectively anchored core inflation "
             "around 3.4%, keeping second-round effects contained.\n"
             "- **Global Commodity & Freight Transmission:** Subdued global industrial metals and moderate crude import prices "
@@ -338,7 +344,7 @@ def synthesis_node(state: MacroAgentState) -> Dict[str, Any]:
             "- **Sticky Services & Shelter Costs:** Housing and shelter components represented over two-thirds of the core CPI advance, "
             "reflecting lagged lease renewals and elevated motor vehicle insurance costs.\n"
             "- **Tight Labor Market & Real Wage Growth:** Continued strong employment and nominal wage gains near 4.1% maintained firm "
-            f"demand across supercore services. *(Cited: {rag_docs[0]['citation'] if rag_docs else 'Federal Reserve FOMC Minutes'})*\n"
+            f"demand across supercore services.{citation_note}\n"
             "- **Energy Rebound vs Goods Deflation:** Core goods prices continued to deflate due to fully restored global supply chains, "
             "partially offsetting crude oil and retail gasoline price fluctuations."
         )
@@ -365,18 +371,38 @@ def synthesis_node(state: MacroAgentState) -> Dict[str, Any]:
     paragraphs.append("#### 5. Authoritative References & Citations")
     for i, doc in enumerate(rag_docs, 1):
         paragraphs.append(f"{i}. **{doc['citation']}** — *{doc['title']}* ({doc['publisher']}, {doc['date']})")
-    paragraphs.append(f"{len(rag_docs)+1}. **FRED & World Bank Data Warehouse** — Series: CPIAUCSL / FP.CPI.TOTL.ZG")
+    paragraphs.append(f"#### 6. Data Provenance\nData source: {ts.get('data_source', 'Macro data source unavailable')}.")
 
     synthesis_text = "\n\n".join(paragraphs)
+
+    from backend.services.research_guardrails import validate_research_memorandum
+    try:
+        with start_span("macro_agent.guardrails.validate_memorandum",
+                        source_count=len(rag_docs), memorandum_chars=len(synthesis_text)):
+            validation = validate_research_memorandum(synthesis_text, rag_docs)
+    except Exception as exc:
+        validation = {
+            "passed": False,
+            "validator": "macro_citations_and_rate_projections",
+            "source_count": len(rag_docs),
+            "issues": [str(exc)[:1200]],
+        }
+        synthesis_text = (
+            "### Research memorandum withheld\n\n"
+            "Guardrails validation could not verify the memorandum's citations and forward-looking rate claims. "
+            "Review the validation issues and retrieve authoritative source material before publication."
+        )
 
     trace_entry = {
         "step": "synthesis",
         "timestamp": datetime.utcnow().isoformat(),
-        "details": "Completed synthesis of cited macroeconomic research report with time-series analysis and citations.",
+        "details": ("Completed Guardrails-validated synthesis." if validation["passed"]
+                    else "Withheld synthesis after Guardrails validation failure."),
     }
 
     return {
         "synthesis": synthesis_text,
+        "validation": validation,
         "execution_trace": state.get("execution_trace", []) + [trace_entry],
     }
 
@@ -389,11 +415,15 @@ def build_macro_research_graph():
 
     graph = StateGraph(MacroAgentState)
 
-    graph.add_node("planner", planner_node)
-    graph.add_node("macro_data", macro_data_node)
-    graph.add_node("quant_backtest", quant_backtest_node)
-    graph.add_node("rag_retrieval", rag_retrieval_node)
-    graph.add_node("synthesis", synthesis_node)
+    nodes = [
+        ("planner", planner_node, "macro_data"),
+        ("macro_data", macro_data_node, "quant_backtest"),
+        ("quant_backtest", quant_backtest_node, "rag_retrieval"),
+        ("rag_retrieval", rag_retrieval_node, "synthesis"),
+        ("synthesis", synthesis_node, "END"),
+    ]
+    for node_name, node_fn, next_node in nodes:
+        graph.add_node(node_name, _traced_transition(node_name, next_node, node_fn))
 
     graph.set_entry_point("planner")
     graph.add_edge("planner", "macro_data")
@@ -403,6 +433,18 @@ def build_macro_research_graph():
     graph.add_edge("synthesis", END)
 
     return graph.compile()
+
+
+def _traced_transition(node_name: str, next_node: str, node_fn):
+    """Wrap every graph and fallback state transition in a named span."""
+    def invoke(state: MacroAgentState) -> Dict[str, Any]:
+        with start_span("macro_agent.state_transition", node=node_name, next_node=next_node,
+                        state_keys=",".join(sorted(state.keys()))) as span:
+            update = node_fn(state) or {}
+            if span is not None:
+                span.set_attribute("macro_agent.update_keys", ",".join(sorted(update.keys())))
+            return update
+    return invoke
 
 
 # Compiled LangGraph agent runner (if installed)
@@ -432,16 +474,30 @@ def run_macro_research(
         "synthesis": "",
         "citations": [],
         "execution_trace": [],
+        "validation": {"passed": False, "validator": "not_run", "issues": []},
     }
 
     if _macro_agent_app is not None:
-        final_state = _macro_agent_app.invoke(initial_state)
-        return dict(final_state)
+        with start_span("macro_agent.run", country=country, start_year=start_year,
+                        end_year=end_year, include_backtest=include_backtest,
+                        query_chars=len(query)):
+            final_state = _macro_agent_app.invoke(initial_state)
+            return dict(final_state)
 
     # Deterministic sequential execution fallback (for zero-dependency runtime)
     state = dict(initial_state)
-    for node_fn in (planner_node, macro_data_node, quant_backtest_node, rag_retrieval_node, synthesis_node):
-        update = node_fn(state)
-        if update:
-            state.update(update)
+    sequence = [
+        ("planner", planner_node, "macro_data"),
+        ("macro_data", macro_data_node, "quant_backtest"),
+        ("quant_backtest", quant_backtest_node, "rag_retrieval"),
+        ("rag_retrieval", rag_retrieval_node, "synthesis"),
+        ("synthesis", synthesis_node, "END"),
+    ]
+    with start_span("macro_agent.run", country=country, start_year=start_year,
+                    end_year=end_year, include_backtest=include_backtest,
+                    query_chars=len(query)):
+        for node_name, node_fn, next_node in sequence:
+            update = _traced_transition(node_name, next_node, node_fn)(state)
+            if update:
+                state.update(update)
     return state

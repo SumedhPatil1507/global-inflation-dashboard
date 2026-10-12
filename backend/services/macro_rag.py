@@ -7,6 +7,7 @@ import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import numpy as np
+from backend.core.telemetry import start_span
 
 # ── Knowledge Base Corpus ────────────────────────────────────────────────────
 MACRO_KNOWLEDGE_CORPUS: List[Dict[str, Any]] = [
@@ -288,4 +289,10 @@ def retrieve_macro_reports(
     top_k: int = 3,
 ) -> List[Dict[str, Any]]:
     """Public helper to retrieve relevant World Bank and RBI report excerpts with citations."""
-    return _rag_index.search(query=query, country=country, top_k=top_k)
+    with start_span("macro_agent.rag.retrieve", country=country or "unspecified",
+                    top_k=top_k, query_chars=len(query)) as span:
+        results = _rag_index.search(query=query, country=country, top_k=top_k)
+        if span is not None:
+            span.set_attribute("rag.result_count", len(results))
+            span.set_attribute("rag.doc_ids", [str(doc.get("doc_id", "")) for doc in results])
+        return results
