@@ -189,6 +189,38 @@ The API and Dashboard employ asymmetric **RS256 JWT** authentication with granul
 
 ---
 
+## Mixed-Frequency Nowcasting & Execution-Aware Backtesting
+
+The quantitative module includes a release-time-safe MIDAS nowcaster and a portfolio backtester with half-spread, per-fill slippage, and Almgren–Chriss temporary market impact. The Streamlit **Forecasting** tab accepts two CSV files for a monthly CPI nowcast; the **Stress Test** tab also contains an execution-aware portfolio backtest with adjustable friction assumptions. Its equity/drawdown and execution-cost charts are interactive Plotly figures with hover details and date-range controls.
+
+### MIDAS input files
+
+Daily observations CSV requires `date` plus one or more numeric market columns (for example `commodity_price,bond_yield`). Monthly CPI CSV requires `period,cpi,release_date`, where `release_date` is the actual public release timestamp. MIDAS training only uses daily observations strictly before each release, and a nowcast only uses observations strictly before its selected `as_of` cutoff. Upload enough released CPI periods (at least three) and daily history for the configured lookback window.
+
+The backend endpoint is `POST /api/quant/midas-nowcast` (Analyst/Admin token required):
+
+```json
+{
+  "daily_observations": [
+    {"date": "2024-01-02T00:00:00Z", "commodity_price": 74.2, "bond_yield": 4.1}
+  ],
+  "monthly_cpi": {"2023-10": 307.6, "2023-11": 307.9, "2023-12": 308.4},
+  "release_dates": {
+    "2023-10": "2023-11-14T13:30:00Z",
+    "2023-11": "2023-12-12T13:30:00Z",
+    "2023-12": "2024-01-11T13:30:00Z"
+  },
+  "target_period": "2024-01",
+  "as_of": "2024-01-20T23:59:59Z",
+  "lookback_days": 60,
+  "alpha": 1.0
+}
+```
+
+### Backtest cost assumptions and reported metrics
+
+`POST /api/quant/backtest` accepts `half_spread_bps`, `base_slippage_bps`, `impact_eta`, and optional per-asset `average_daily_volume` and `daily_slippage_bps`. The dashboard exposes the first three controls. Its simulator varies slippage with realized daily moves; market-data runs can supply per-fill slippage and ADV through the API. Results expose Sharpe, Sortino, Calmar, historical 95% expected shortfall (loss convention), maximum drawdown and its duration (business-day observations), annualized volatility, equity, and transaction costs. The Streamlit demo backtest uses synthetic daily returns; use the backend endpoint for warehouse-backed market data.
+
 ## 📄 License & Attribution
 
 Designed and engineered for institutional macroeconomic research, quantitative analysis, and educational exploration. 

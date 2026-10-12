@@ -318,6 +318,7 @@ with tabs[7]:
         from modules.forecasting import (run_arima_forecast, run_prophet_forecast,
                                           run_var_forecast, forecast_plot_dataframe,
                                           var_multi_country_plot, PROPHET_OK)
+        import plotly.graph_objects as go
         st.markdown('<p class="sh">Macroeconomic Time-Series Forecasting</p>', unsafe_allow_html=True)
         fc_country = st.selectbox("Country for Single-Series Forecast",
                                   selected_countries or all_countries, key="fc_c")
@@ -353,6 +354,43 @@ with tabs[7]:
                                 use_container_width=True)
         else:
             st.info("Select at least 2 countries to run VAR.")
+
+        st.markdown("---")
+        st.markdown('<p class="sh">Daily Markets → Monthly CPI (MIDAS Nowcast)</p>', unsafe_allow_html=True)
+        st.caption("Provide point-in-time daily commodity and bond-yield observations plus CPI values and their actual publication dates.")
+        daily_file = st.file_uploader("Daily market CSV (date, commodity_price, bond_yield)", type="csv", key="midas_daily")
+        cpi_file = st.file_uploader("Monthly CPI CSV (period, cpi, release_date)", type="csv", key="midas_cpi")
+        if daily_file is not None and cpi_file is not None:
+            try:
+                daily_input = pd.read_csv(daily_file)
+                cpi_input = pd.read_csv(cpi_file)
+                daily_input["date"] = pd.to_datetime(daily_input["date"], utc=True)
+                cpi_input["period"] = cpi_input["period"].astype(str)
+                cpi_input["release_date"] = pd.to_datetime(cpi_input["release_date"], utc=True)
+                daily_values = daily_input.set_index("date").select_dtypes(include=[np.number])
+                cpi_values = cpi_input.set_index("period")["cpi"].astype(float)
+                release_values = cpi_input.set_index("period")["release_date"]
+                latest_as_of = daily_values.index.max()
+                target_period = (pd.Period(cpi_values.index[-1], freq="M") + 1).strftime("%Y-%m")
+                as_of_date = st.date_input("Market data available through (exclusive cutoff)", value=latest_as_of.date(), key="midas_asof")
+                if st.button("Run MIDAS nowcast", type="primary", key="run_midas"):
+                    from backend.models.midas_nowcast import MIDASNowcaster
+                    model = MIDASNowcaster().fit(daily_values, cpi_values, release_values)
+                    result = model.nowcast(daily_values, target_period=target_period,
+                                           as_of=pd.Timestamp(as_of_date, tz="UTC") + pd.Timedelta(days=1))
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric(f"CPI nowcast · {target_period}", f"{result.nowcast:.2f}")
+                    m2.metric("Training releases", result.training_observations)
+                    m3.metric("Estimated lag decay", f"{model.decay:.4f}")
+                    hist = pd.DataFrame({"period": pd.to_datetime(cpi_values.index), "CPI": cpi_values.values})
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=hist["period"], y=hist["CPI"], mode="lines+markers", name="Released CPI"))
+                    fig.add_trace(go.Scatter(x=[pd.Period(target_period).to_timestamp()], y=[result.nowcast], mode="markers", name="MIDAS nowcast", marker={"size": 13, "color": "#f97316", "symbol": "diamond"}))
+                    fig.update_layout(title="Release-time-safe monthly CPI nowcast", xaxis_title="Reference month", yaxis_title="CPI", hovermode="x unified", template="plotly_dark", height=420)
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.json({"as_of": result.as_of, "weighted_market_predictors": result.predictors})
+            except (KeyError, ValueError, TypeError) as exc:
+                st.error(f"Could not prepare MIDAS inputs: {exc}. Check the required column names and dates.")
         log_action(user, "forecasting_view", f"country={fc_country}", rows=len(df))
 
 # ── TAB 8: Stress Test ────────────────────────────────────────────────────────
@@ -360,6 +398,50 @@ with tabs[8]:
     if not can_access("models"):
         st.warning("Upgrade to Analyst or Admin.")
     else:
+        import plotly.graph_objects as go
+        from backend.services.backtester import generate_simulated_backtest
+        st.markdown('<p class="sh">Portfolio Backtester · Execution-Aware</p>', unsafe_allow_html=True)
+        st.caption("Interactive equity, drawdown and execution-cost views. Demo returns are synthetic; tune spread, slippage and temporary market impact.")
+        q1, q2, q3 = st.columns(3)
+        with q1:
+            bt_tickers = st.multiselect("Assets", ["GLD", "SPY", "TIP", "USO", "BND", "DBA"], ["GLD", "SPY", "TIP"], key="bt_assets")
+        with q2:
+            bt_start = st.date_input("Start date", value=pd.Timestamp("2020-01-01"), key="bt_start")
+        with q3:
+            bt_end = st.date_input("End date", value=pd.Timestamp("2024-12-31"), key="bt_end")
+        c1, c2, c3 = st.columns(3)
+        half_spread = c1.slider("Half-spread (bps)", 0.0, 20.0, 2.0, 0.5, key="bt_spread")
+        slippage = c2.slider("Base slippage (bps)", 0.0, 30.0, 1.0, 0.5, key="bt_slippage")
+        impact_eta = c3.slider("Almgren–Chriss η", 0.0, 1.0, 0.1, 0.01, key="bt_eta")
+        if st.button("Run execution-aware backtest", type="primary", key="bt_run"):
+            if not bt_tickers:
+                st.warning("Select at least one asset.")
+            elif bt_end <= bt_start:
+                st.warning("End date must be after the start date.")
+            else:
+                bt = generate_simulated_backtest(bt_tickers, str(bt_start), str(bt_end), half_spread, slippage, impact_eta)
+                cards = st.columns(5)
+                for col, label, value in zip(cards,
+                    ["Sharpe", "Sortino", "Calmar", "CVaR 95%", "Max DD duration"],
+                    [bt["sharpe"], bt["sortino_ratio"], bt["calmar_ratio"], bt["expected_shortfall_95"], bt["max_drawdown_duration"]]):
+                    col.metric(label, f"{value:.3f}" if label != "Max DD duration" else f"{value} days")
+                dates = pd.to_datetime(bt["dates"])
+                equity = pd.Series(bt["equity_curve"], index=dates)
+                drawdown = (equity / equity.cummax() - 1) * 100
+                costs = pd.Series(bt["transaction_costs"], index=dates[1:]) * 10000
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=dates, y=equity, mode="lines", name="Portfolio equity", line={"color": "#38bdf8", "width": 2}, yaxis="y"))
+                fig.add_trace(go.Scatter(x=dates, y=drawdown, mode="lines", name="Drawdown (%)", fill="tozeroy", line={"color": "#fb7185"}, yaxis="y2"))
+                fig.update_layout(title="Portfolio path and underwater drawdown", template="plotly_dark", hovermode="x unified", height=470,
+                    xaxis={"title": "Date", "rangeslider": {"visible": True}}, yaxis={"title": "Equity ($)"},
+                    yaxis2={"title": "Drawdown (%)", "overlaying": "y", "side": "right", "showgrid": False})
+                st.plotly_chart(fig, use_container_width=True)
+                cost_fig = go.Figure(go.Scatter(x=costs.index, y=costs, mode="lines", name="Daily execution cost", line={"color": "#fbbf24"}))
+                cost_fig.update_layout(title="Daily transaction cost (basis points of portfolio equity)", template="plotly_dark", height=300, hovermode="x unified")
+                st.plotly_chart(cost_fig, use_container_width=True)
+                st.caption(f"Maximum drawdown: {bt['max_drawdown']:.2%} · Total return: {bt['total_return']:.2%} · Annualized volatility: {bt['annualized_volatility']:.2%}")
+                log_action(user, "quant_backtest", f"assets={','.join(bt_tickers)}", rows=len(equity))
+        st.markdown("---")
         from modules.forecasting import (run_stress_test, stress_test_plot,
                                           portfolio_bar, SCENARIOS, ASSETS, cumulative_wealth_plot,
                                           sharpe_table, monte_carlo_plot)

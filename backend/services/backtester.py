@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Optional
 from datetime import datetime
+from backend.quant.backtester import ExecutionCostModel, performance_metrics, rebalance_portfolio
 try:
     from fastapi import APIRouter, Depends, HTTPException
     from pydantic import BaseModel, Field
@@ -44,6 +45,11 @@ class BacktestRequest(BaseModel):
     indicators: List[str] = None
     start_date: str = "2020-01-01"
     end_date: str = "2024-12-31"
+    half_spread_bps: float = 2.0
+    base_slippage_bps: float = 1.0
+    impact_eta: float = 0.1
+    average_daily_volume: Dict[str, float] = None
+    daily_slippage_bps: Dict[str, List[float]] = None
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -60,6 +66,11 @@ class BacktestResult(BaseModel):
     max_drawdown: float
     total_return: float
     annualized_volatility: float
+    sortino_ratio: float = 0.0
+    calmar_ratio: float = 0.0
+    expected_shortfall_95: float = 0.0
+    max_drawdown_duration: int = 0
+    transaction_costs: List[float] = Field(default_factory=list)
     ticker_weights: Dict[str, float] = None
     summary: str = ""
     
@@ -70,31 +81,16 @@ class BacktestResult(BaseModel):
 
 
 def _calc_metrics(equity: pd.Series) -> Dict[str, float]:
-    returns = equity.pct_change().dropna()
-    if returns.empty or returns.std() == 0:
-        sharpe = 0.0
-        ann_vol = 0.0
-    else:
-        sharpe = float(returns.mean() / (returns.std() + 1e-9) * np.sqrt(252))
-        ann_vol = float(returns.std() * np.sqrt(252))
-
-    cummax = equity.cummax()
-    drawdown = (cummax - equity) / (cummax + 1e-9)
-    max_dd = float(drawdown.max()) if not drawdown.empty else 0.0
-    total_ret = float(equity.iloc[-1] / equity.iloc[0] - 1.0) if len(equity) > 1 else 0.0
-
-    return {
-        "sharpe": round(sharpe, 4),
-        "max_drawdown": round(max_dd, 4),
-        "total_return": round(total_ret, 4),
-        "annualized_volatility": round(ann_vol, 4),
-    }
+    return {key: round(float(value), 4) for key, value in performance_metrics(equity).items()}
 
 
 def generate_simulated_backtest(
     tickers: List[str],
     start_date: str = "2020-01-01",
     end_date: str = "2024-12-31",
+    half_spread_bps: float = 2.0,
+    base_slippage_bps: float = 1.0,
+    impact_eta: float = 0.1,
 ) -> Dict:
     """Generate backtest time series using real market data or calibrated macro return proxies."""
     start_dt = pd.to_datetime(start_date)
@@ -124,21 +120,32 @@ def generate_simulated_backtest(
     equal_weight = 1.0 / len(selected)
     weights = {t: round(equal_weight, 3) for t in selected}
 
-    portfolio_returns = np.zeros(n_days)
+    asset_return_data = {}
 
     for ticker in selected:
         key = ticker.upper()
         mu, sigma = asset_profiles.get(key, (0.0003, 0.010))
         # Add slight macro shock dynamics (e.g. 2022 inflation spike boost to commodities, pullback to bonds)
-        daily_noise = np.random.normal(mu, sigma, n_days)
-        portfolio_returns += daily_noise * equal_weight
+        asset_return_data[ticker] = np.random.normal(mu, sigma, n_days)
 
-    portfolio_returns[0] = 0.0
-    cum_returns = np.cumprod(1.0 + portfolio_returns)
-    equity = pd.Series(cum_returns * 10000.0, index=date_range)  # Starting capital $10,000
+    returns = pd.DataFrame(asset_return_data, index=date_range)
+    daily_vol = {t: asset_profiles.get(t.upper(), (0.0003, 0.010))[1] for t in selected}
+    equity, transaction_costs = rebalance_portfolio(
+        returns, weights, cost_model=ExecutionCostModel(
+            half_spread_bps=half_spread_bps,
+            base_slippage_bps=base_slippage_bps,
+            impact_eta=impact_eta,
+        ), asset_volatility=daily_vol,
+        # Illustrative variable execution slippage rises with daily volatility.
+        daily_slippage_bps=pd.DataFrame(
+            {t: base_slippage_bps * (1 + np.abs(returns[t]) / max(daily_vol[t], 1e-9))
+             for t in selected}, index=date_range,
+        ),
+    )
+    equity = pd.concat([pd.Series([10000.0], index=[date_range[0] - pd.offsets.BDay(1)]), equity])
 
     metrics = _calc_metrics(equity)
-    dates_str = [d.strftime("%Y-%m-%d") for d in date_range]
+    dates_str = [pd.Timestamp(d).strftime("%Y-%m-%d") for d in equity.index]
 
     return {
         "equity_curve": [round(val, 2) for val in equity.tolist()],
@@ -147,6 +154,11 @@ def generate_simulated_backtest(
         "max_drawdown": metrics["max_drawdown"],
         "total_return": metrics["total_return"],
         "annualized_volatility": metrics["annualized_volatility"],
+        "sortino_ratio": metrics["sortino_ratio"],
+        "calmar_ratio": metrics["calmar_ratio"],
+        "expected_shortfall_95": metrics["expected_shortfall_95"],
+        "max_drawdown_duration": metrics["max_drawdown_duration"],
+        "transaction_costs": [round(float(v), 8) for v in transaction_costs.tolist()],
         "ticker_weights": weights,
         "summary": (
             f"Backtested portfolio {', '.join(selected)} from {start_date} to {end_date}. "
@@ -161,16 +173,41 @@ async def execute_backtest(
     indicators: List[str],
     start_date: str,
     end_date: str,
+    half_spread_bps: float = 2.0,
+    base_slippage_bps: float = 1.0,
+    impact_eta: float = 0.1,
+    average_daily_volume: Dict[str, float] = None,
+    daily_slippage_bps: Dict[str, List[float]] = None,
 ) -> BacktestResult:
     """Core backtest execution with warehouse query and robust fallback."""
     try:
         from backend.services.data_warehouse import get_historical_matrix
         matrix = await get_historical_matrix(tickers, indicators, start_date)
         if not matrix.empty and all(t in matrix.columns for t in tickers):
-            equity = matrix[tickers].sum(axis=1).fillna(1.0)
-            if (equity > 0).any():
-                metrics = _calc_metrics(equity)
+            prices = matrix[tickers].sort_index().ffill().dropna(how="all")
+            asset_returns = prices.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0.0)
+            if len(asset_returns) > 1:
                 equal_weight = 1.0 / len(tickers)
+                weights = {t: equal_weight for t in tickers}
+                returns = asset_returns.iloc[1:]
+                daily_vol = returns.std().fillna(0).to_dict()
+                slippage_frame = None
+                if daily_slippage_bps:
+                    slippage_frame = pd.DataFrame(
+                        {ticker: pd.Series(values, index=returns.index)
+                         for ticker, values in daily_slippage_bps.items()},
+                        index=returns.index,
+                    )
+                equity, costs = rebalance_portfolio(
+                    returns, weights,
+                    cost_model=ExecutionCostModel(half_spread_bps, base_slippage_bps, impact_eta),
+                    asset_volatility=daily_vol,
+                    average_daily_volume=average_daily_volume,
+                    daily_slippage_bps=slippage_frame,
+                )
+                initial = float(prices[tickers].iloc[0].mean()) or 1.0
+                equity = pd.concat([pd.Series([initial], index=[prices.index[0]]), equity])
+                metrics = _calc_metrics(equity)
                 return BacktestResult(
                     equity_curve=[round(x, 2) for x in equity.tolist()],
                     dates=[str(d) for d in equity.index],
@@ -178,13 +215,20 @@ async def execute_backtest(
                     max_drawdown=metrics["max_drawdown"],
                     total_return=metrics["total_return"],
                     annualized_volatility=metrics["annualized_volatility"],
+                    sortino_ratio=metrics["sortino_ratio"],
+                    calmar_ratio=metrics["calmar_ratio"],
+                    expected_shortfall_95=metrics["expected_shortfall_95"],
+                    max_drawdown_duration=metrics["max_drawdown_duration"],
+                    transaction_costs=[round(float(v), 8) for v in costs.tolist()],
                     ticker_weights={t: round(equal_weight, 3) for t in tickers},
                     summary=f"Warehouse backtest of {len(tickers)} assets over {len(equity)} data points.",
                 )
     except Exception:
         pass  # Fallback to high-fidelity macro market simulation
 
-    sim_res = generate_simulated_backtest(tickers, start_date, end_date)
+    sim_res = generate_simulated_backtest(
+        tickers, start_date, end_date, half_spread_bps, base_slippage_bps, impact_eta
+    )
     # Handle both dict and object unpacking
     if isinstance(sim_res, dict):
         return BacktestResult(**sim_res)
@@ -210,4 +254,9 @@ if FASTAPI_AVAILABLE and router is not None:
             indicators=req.indicators,
             start_date=req.start_date,
             end_date=req.end_date,
+            half_spread_bps=req.half_spread_bps,
+            base_slippage_bps=req.base_slippage_bps,
+            impact_eta=req.impact_eta,
+            average_daily_volume=req.average_daily_volume,
+            daily_slippage_bps=req.daily_slippage_bps,
         )

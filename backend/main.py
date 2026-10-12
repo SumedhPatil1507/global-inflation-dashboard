@@ -5,7 +5,7 @@ Run: uvicorn backend.main:app --reload --port 8000
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.core.config import get_settings
-from backend.api.routers import auth, data, ml, agent
+from backend.api.routers import auth, data, ml, agent, macro_stream, nowcast
 from backend.services.backtester import router as quant_router
 
 cfg = get_settings()
@@ -31,6 +31,8 @@ app.include_router(data.router)
 app.include_router(ml.router)
 app.include_router(quant_router)
 app.include_router(agent.router)
+app.include_router(macro_stream.router)
+app.include_router(nowcast.router)
 
 
 @app.get("/health")
