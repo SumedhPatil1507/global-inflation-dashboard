@@ -47,6 +47,19 @@ services:
     volumes:
       - ./backend:/app/backend
 
+  # Edge-friendly sidecar: Kafka offsets advance only after TimescaleDB storage.
+  sensor-consumer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.edge
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+
   # ── Streamlit frontend ──────────────────────────────────────────────────────
   frontend:
     build:

@@ -1,7 +1,10 @@
-project: global_inflation_macro
+project: global_inflation_predmaint
 registry: data/registry.db
 provider: local
 online_store:
   type: sqlite
   path: data/online_store.db
+# Feast definitions live in `features.py` (macro) and `predmaint_features.py`
+# (TimescaleDB sensor windows). The latter uses event_timestamp plus
+# created_timestamp for point-in-time-safe RMS, kurtosis, and crest-factor joins.
 entity_key_serialization_version: 2

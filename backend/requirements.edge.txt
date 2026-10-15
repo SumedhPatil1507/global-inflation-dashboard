@@ -1,0 +1,7 @@
+# Runtime for the Kafka-to-TimescaleDB edge sidecar. It intentionally excludes
+# training and LLM packages so telemetry collection has a small attack surface.
+aiokafka==0.11.0
+asyncpg==0.29.0
+asyncua==1.1.5
+redis==5.0.4
+pydantic-settings==2.2.1

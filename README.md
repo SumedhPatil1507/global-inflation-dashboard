@@ -69,6 +69,7 @@ Access the interactive live Streamlit dashboard directly in your browser:
 | **Tab 10** | **✏️ Interactive Data Editor** | In-browser dataframe editing with CSV and JSON data export capabilities. |
 | **Tab 11** | **💬 User Feedback & Audit** | In-app feedback loop with real-time state telemetry. |
 | **Tab 12** | **🛡️ Admin Panel & Audit Ledger** | User role administration and cryptographically signed audit log inspector. |
+| **Tab 13** | **🏭 IIoT Monitor** | Interactive Plotly telemetry, threshold overlays, and rolling RMS, kurtosis, and crest-factor condition maps. |
 
 ---
 
@@ -126,6 +127,38 @@ Interactive API documentation will be available at `http://localhost:8000/docs`.
 docker-compose up --build -d
 ```
 
+### 6. Run from VS Code and publish to GitHub
+
+Open the repository in VS Code, then use its integrated PowerShell terminal:
+
+```powershell
+code .
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r inflation-dashboard/requirements.txt
+pip install -r backend/requirements.txt
+streamlit run inflation-dashboard/app.py
+```
+
+In a second VS Code terminal, start the API when you need its routes:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+uvicorn backend.main:app --reload --port 8000
+```
+
+After reviewing the dashboard at `http://localhost:8501`, publish the reviewed changes:
+
+```powershell
+git status
+git add README.md .env.example backend docker-compose.yml inflation-dashboard
+git commit -m "feat: add interactive IIoT monitoring and safety interlocks"
+git push origin main
+```
+
+The **IIoT Monitor** tab accepts a CSV with `timestamp`, `vibration`, `thermal`, and `acoustic` columns. It provides interactive Plotly hover, zoom, pan, range selection, and image export controls. It visualizes the fixed throttle and emergency-stop thresholds but does not issue PLC writes; control actions remain exclusively in the backend safety gate.
+
 ---
 
 ## 🔐 Authentication, RBAC & Scopes
@@ -134,8 +167,8 @@ The API and Dashboard employ asymmetric **RS256 JWT** authentication with granul
 
 | Role | JWT Scopes Assigned | Accessible Dashboard Tabs |
 |---|---|---|
-| **Admin** | `admin:all`, `macro:research`, `macro:read`, `quant:backtest`, `ml:train` | All Tabs (0 – 12) + Admin Panel |
-| **Analyst** | `macro:research`, `macro:read`, `quant:backtest`, `ml:train` | Tabs 0 – 11 |
+| **Admin** | `admin:all`, `macro:research`, `macro:read`, `quant:backtest`, `ml:train` | All tabs, including IIoT Monitor and Admin Panel |
+| **Analyst** | `macro:research`, `macro:read`, `quant:backtest`, `ml:train` | Analytical tabs and IIoT Monitor |
 | **Viewer** | `macro:read` | EDA, Insights, Macro Agent, Clustering, Advanced |
 
 *Note: Demo logins are configured out-of-the-box (`admin` / `analyst` / `viewer`). RSA keypairs (`certs/private_key.pem` and `certs/public_key.pem`) are automatically provisioned on launch if absent.*

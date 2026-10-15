@@ -111,7 +111,7 @@ tabs = st.tabs([
     "📊 EDA", "💡 Insights", "🔬 Macro Agent", "📈 Signals",
     "🤖 ML Models", "🔍 Anomaly", "🔬 Clustering",
     "🔮 Forecasting", "💥 Stress Test",
-    "🎨 Advanced", "✏️ Data Editor", "💬 Feedback", "🛡️ Admin",
+    "🎨 Advanced", "✏️ Data Editor", "💬 Feedback", "🛡️ Admin", "🏭 IIoT Monitor",
 ])
 
 # ── TAB 0: EDA ────────────────────────────────────────────────────────────────
@@ -593,6 +593,14 @@ with tabs[11]:
 # ── TAB 12: Admin ─────────────────────────────────────────────────────────────
 with tabs[12]:
     render_admin_panel(user)
+
+with tabs[13]:
+    if not can_access("eda"):
+        st.warning("Access restricted.")
+    else:
+        from modules.predmaint import render_predmaint_monitor
+        render_predmaint_monitor()
+        log_action(user, "iiot_monitor_view")
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
